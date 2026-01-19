@@ -9,11 +9,11 @@ defmodule Flatbuffer.Cursor do
 
   def wrap(data, offset \\ 0), do: %__MODULE__{data: data, offset: offset}
 
-  def skip(c, offset), do: %__MODULE__{c | offset: c.offset + offset}
+  def skip(%__MODULE__{} = c, offset), do: %__MODULE__{c | offset: c.offset + offset}
 
-  def rjump_i32(c), do: %__MODULE__{c | offset: c.offset - get_i32(c)}
-  def jump_i32(c), do: %__MODULE__{c | offset: c.offset + get_i32(c)}
-  def jump_u32(c), do: %__MODULE__{c | offset: c.offset + get_u32(c)}
+  def rjump_i32(%__MODULE__{} = c), do: %__MODULE__{c | offset: c.offset - get_i32(c)}
+  def jump_i32(%__MODULE__{} = c), do: %__MODULE__{c | offset: c.offset + get_i32(c)}
+  def jump_u32(%__MODULE__{} = c), do: %__MODULE__{c | offset: c.offset + get_u32(c)}
 
   def get_i8(c), do: IOData.to_binary!(c.data, c.offset, 1) |> decode_i8()
   def get_u8(c), do: IOData.to_binary!(c.data, c.offset, 1) |> decode_u8()
