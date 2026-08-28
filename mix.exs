@@ -4,7 +4,7 @@ defmodule Eflatbuffers.MixProject do
   def project do
     [
       app: :flatbuffer,
-      version: "0.4.1",
+      version: "0.5.0",
       description: "Elixir Flatbuffer implementation",
       elixir: "~> 1.18",
       start_permanent: Mix.env() == :prod,
