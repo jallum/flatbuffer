@@ -1,4 +1,4 @@
-[![Build Status](https://github.com/jallum/flatbuffer/workflows/CI/badge.svg)](https://github.com/jallum/flatbuffer/actions) [![Hex.pm](https://img.shields.io/hexpm/v/flatbuffer.svg)](https://hex.pm/packages/flatbuffer) [![Documentation](https://img.shields.io/badge/documentation-gray)](https://hexdocs.pm/flatbuffer/)
+[![Build Status](https://github.com/jallum/flatbuffer/workflows/CI/badge.svg)](https://github.com/jallum/flatbuffer/actions) [![Coverage Status](https://coveralls.io/repos/github/jallum/flatbuffer/badge.svg?branch=main)](https://coveralls.io/github/jallum/flatbuffer?branch=main) [![Hex.pm](https://img.shields.io/hexpm/v/flatbuffer.svg)](https://hex.pm/packages/flatbuffer) [![Documentation](https://img.shields.io/badge/documentation-gray)](https://hexdocs.pm/flatbuffer/)
 
 
 ---
