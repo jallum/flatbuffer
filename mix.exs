@@ -36,6 +36,7 @@ defmodule Eflatbuffers.MixProject do
   defp deps do
     [
       {:iodata, "~> 0.5"},
+      {:benchee, "~> 1.4", only: :dev},
       {:ex_doc, "~> 0.34", only: :dev, runtime: false},
       {:mix_test_watch, "~> 1.0", only: [:dev, :test], runtime: false}
     ]

@@ -31,14 +31,15 @@ defmodule Flatbuffer.Schema.UseTest do
     end
 
     test "it will encode and decode a map correctly" do
-      binary_value =
+      legacy_binary =
         "0E00000000000000060008000400060000000C000000"
         |> Base.decode16!()
 
-      assert ^binary_value = TestSchema.to_binary(%{foo: 12})
+      encoded = TestSchema.to_binary(%{foo: 12})
 
-      assert {:ok, %{foo: 12}} == TestSchema.read(binary_value)
-      assert {:ok, %{"foo" => 12}} == SafeTestSchema.read(binary_value)
+      assert {:ok, %{foo: 12}} == TestSchema.read(encoded)
+      assert {:ok, %{foo: 12}} == TestSchema.read(legacy_binary)
+      assert {:ok, %{"foo" => 12}} == SafeTestSchema.read(legacy_binary)
       assert SafeTestSchema.schema().safe
     end
 

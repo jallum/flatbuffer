@@ -154,7 +154,9 @@ iex(4)> ColorScheme.get(color_scheme_fb, [:background, :green])
 * tables
 * scalars
 * strings
-* vflatbufferrs
+* vtables
+* shared strings (`shared` field attribute)
+* shared vtables
 * structs
 * unions
 * enums
@@ -164,9 +166,7 @@ iex(4)> ColorScheme.get(color_scheme_fb, [:background, :green])
 * validate file identifiers
 * includes
 
-### features only in flatcs
+### features only in flatc
 
-* shared strings
-* shared vtables
 * alignment
-* additional attributes
+* additional attributes other than `shared`

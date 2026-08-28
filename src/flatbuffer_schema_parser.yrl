@@ -45,16 +45,16 @@ fields -> field ';'         : [ '$1' ].
 fields -> field ';' fields  : [ '$1' | '$3' ].
 
 field -> key_def                    : '$1'.
-field -> key_def '(' attributes ')' : '$1'.
+field -> key_def '(' attributes ')' : with_attributes('$1', '$3').
 
 key_def -> identifier ':' type              : {'$1', '$3'}.
 key_def -> identifier ':' '[' type ']'      : {'$1', {vector, '$4'}}.
 key_def -> identifier ':' type '=' value    : {'$1', {'$3', '$5'}}.
 
-attributes -> attributes ',' attribute_def. %ignore
-attributes -> attribute_def.                %ignore
-attribute_def -> string ':' value.          %ignore
-attribute_def -> string.                    %ignore
+attributes -> attributes ',' attribute_def : maps:merge('$1', '$3').
+attributes -> attribute_def                : '$1'.
+attribute_def -> string ':' value          : #{get_value_bin('$1') => '$3'}.
+attribute_def -> string                    : #{get_value_bin('$1') => true}.
 
 type -> string : get_type('$1').
 
@@ -95,3 +95,6 @@ get_type({_Token, _Line, Value})    -> list_to_binary(Value).
 
 add_def({Defs, Opts}, Def) -> {maps:merge(Defs, Def), Opts}.
 add_opt({Defs, Opts}, Opt) -> {Defs, [Opt | Opts]}.
+
+with_attributes({Name, Type}, Attributes) ->
+    {Name, {attributes, Type, Attributes}}.

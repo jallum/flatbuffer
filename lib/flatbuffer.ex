@@ -128,17 +128,7 @@ defmodule Flatbuffer do
   """
   @spec to_iolist(map(), Schema.t()) :: iolist()
   def to_iolist(%{} = map, %Schema{} = schema) do
-    root_table =
-      [<<vtable_offset::little-size(16)>> | _] =
-      Writer.write(schema.root_type, map, [], schema)
-
-    buffer_id = schema.id || <<0, 0, 0, 0>>
-
-    [
-      <<vtable_offset + 4 + byte_size(buffer_id)::little-size(32)>>,
-      buffer_id,
-      root_table
-    ]
+    Writer.to_iolist(map, schema)
   end
 
   @doc """

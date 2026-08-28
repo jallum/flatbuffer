@@ -1,315 +1,368 @@
 defmodule Flatbuffer.Writer do
   @moduledoc false
 
-  alias Flatbuffer.Utils
+  defmodule State do
+    @moduledoc false
 
-  def to_i8(i8), do: <<i8::signed-8>>
-  def to_u8(u8), do: <<u8::unsigned-8>>
-  def to_i16(i16), do: <<i16::signed-little-16>>
-  def to_u16(u16), do: <<u16::unsigned-little-16>>
-  def to_i32(i32), do: <<i32::signed-little-32>>
-  def to_u32(u32), do: <<u32::unsigned-little-32>>
-  def to_i64(i64), do: <<i64::signed-little-64>>
-  def to_u64(u64), do: <<u64::unsigned-little-64>>
-  def to_f32(f32), do: <<f32::float-little-32>>
-  def to_f64(f64), do: <<f64::float-little-64>>
-
-  def write({_, %{default: same}}, same, _, _), do: []
-
-  # def write({_, _}, nil, _, _) do
-  #   []
-  # end
-
-  def write({:bool, _options}, true, _, _), do: to_u8(1)
-  def write({:bool, _options}, false, _, _), do: to_u8(0)
-
-  def write({:byte, _options}, i8, _, _)
-      when is_integer(i8) and i8 >= -128 and i8 <= 127,
-      do: to_i8(i8)
-
-  def write({:ubyte, _options}, u8, _, _)
-      when is_integer(u8) and u8 >= 0 and u8 <= 255,
-      do: to_u8(u8)
-
-  def write({:short, _options}, i16, _, _)
-      when is_integer(i16) and i16 <= 32_767 and i16 >= -32_768,
-      do: to_i16(i16)
-
-  def write({:ushort, _options}, u16, _, _)
-      when is_integer(u16) and u16 >= 0 and u16 <= 65536,
-      do: to_u16(u16)
-
-  def write({:int, _options}, i32, _, _)
-      when is_integer(i32) and i32 >= -2_147_483_648 and i32 <= 2_147_483_647,
-      do: to_i32(i32)
-
-  def write({:uint, _options}, u32, _, _)
-      when is_integer(u32) and u32 >= 0 and u32 <= 4_294_967_295,
-      do: to_u32(u32)
-
-  def write({:float, _options}, f32, _, _)
-      when is_number(f32) and f32 >= -3.4e+38 and f32 <= +3.4e+38,
-      do: to_f32(f32)
-
-  def write({:long, _options}, i64, _, _)
-      when is_integer(i64) and i64 >= -9_223_372_036_854_775_808 and
-             i64 <= 9_223_372_036_854_775_807,
-      do: to_i64(i64)
-
-  def write({:ulong, _options}, u64, _, _)
-      when is_integer(u64) and u64 >= 0 and u64 <= 18_446_744_073_709_551_615,
-      do: to_u64(u64)
-
-  def write({:double, _options}, f64, _, _)
-      when is_number(f64) and f64 >= -1.7e+308 and f64 <= +1.7e+308,
-      do: to_f64(f64)
-
-  # complex types
-
-  def write({:struct, %{name: struct_name}}, map, _, schema) when is_map(map) do
-    {:struct, %{members: members}} = Map.get(schema.entities, struct_name)
-
-    members
-    |> Enum.map(fn {field_name, field_type} ->
-      value = get_field(map, field_name)
-      write({field_type, %{}}, value, [struct_name, field_name], schema)
-    end)
+    defstruct chunks: [], size: 0, min_align: 1, strings: %{}, vtables: %{}
   end
 
-  def write({:string, _options}, string, _, _) when is_binary(string) do
-    <<byte_size(string)::unsigned-little-size(32)>> <> string
+  def to_iolist(%{} = map, schema) do
+    {root, state} = encode(schema.root_type, map, [], schema, %State{})
+    buffer_id = schema.id || <<0, 0, 0, 0>>
+    state = pre_align(state, 4 + byte_size(buffer_id), state.min_align)
+    state = push_raw(state, buffer_id)
+    {_root_reference, state} = push_offset(state, root)
+    state.chunks
   end
 
-  def write({:vector, {type, type_options}}, values, path, schema)
-      when is_list(values) do
+  defp encode({:string, options}, string, _path, _schema, state) when is_binary(string) do
+    create_string(state, string, Map.get(options, :shared, false))
+  end
+
+  defp encode({:vector, type}, values, path, schema, state) when is_list(values) do
+    create_vector(state, type, values, path, schema)
+  end
+
+  defp encode({:table, %{name: table_name}}, map, path, schema, state) when is_map(map) do
+    create_table(state, table_name, map, path, schema)
+  end
+
+  defp encode({type, _options}, data, path, _schema, _state) do
+    wrong_type(type, data, path)
+  end
+
+  defp create_string(%State{strings: strings} = state, string, true) do
+    case Map.fetch(strings, string) do
+      {:ok, offset} ->
+        {offset, state}
+
+      :error ->
+        {offset, state} = emit_string(state, string)
+        {offset, %{state | strings: Map.put(strings, string, offset)}}
+    end
+  end
+
+  defp create_string(state, string, false), do: emit_string(state, string)
+
+  defp emit_string(state, string) do
+    state = pre_align(state, byte_size(string) + 1, 4)
+    state = push_raw(state, <<0>>)
+    state = push_raw(state, string)
+    state = push_raw(state, <<byte_size(string)::unsigned-little-32>>)
+    {state.size, state}
+  end
+
+  defp create_vector(state, type, values, path, schema) do
+    type = without_default(type)
     vector_length = length(values)
-    # we are putting the indices as [i] as a type
-    # so if something goes wrong it's easy to see
-    # that it was a vector index
-    type_options_without_default = Map.delete(type_options, :default)
 
-    index_types =
-      case vector_length do
-        0 ->
-          []
+    {elements, state, _next_index} =
+      Enum.reduce(values, {[], state, 0}, fn value, {elements, state, index} ->
+        {element, state} = encode_vector_element(type, value, index, path, schema, state)
+        {[element | elements], state, index + 1}
+      end)
 
-        _ ->
-          for i <- 0..(vector_length - 1) do
-            {[i], {type, type_options_without_default}}
+    element_size = Flatbuffer.Utils.sizeof(type, schema)
+    payload_size = vector_length * element_size
+    state = pre_align(state, payload_size, 4)
+    state = pre_align(state, payload_size, alignment(type, schema))
+    state = Enum.reduce(elements, state, &push_vector_element/2)
+
+    state = push_raw(state, <<vector_length::unsigned-little-32>>)
+    {state.size, state}
+  end
+
+  defp encode_vector_element({type, _} = field_type, value, index, path, schema, state)
+       when type in [:string, :vector, :table] do
+    {offset, state} = encode(field_type, value, [[index] | path], schema, state)
+    {{:offset, offset}, state}
+  end
+
+  defp encode_vector_element(type, value, index, path, schema, state),
+    do: {{:inline, inline(type, value, [[index] | path], schema), type}, state}
+
+  defp push_vector_element({:offset, offset}, state), do: elem(push_offset(state, offset), 1)
+
+  defp push_vector_element({:inline, data, _type}, state), do: push_raw(state, data)
+
+  defp create_table(state, table_name, map, path, schema) do
+    {:table, %{fields: fields}} = Map.fetch!(schema.entities, table_name)
+
+    {prepared_fields, state} =
+      prepare_table_fields(fields, 0, map, path, schema, [], state)
+
+    emit_table(state, prepared_fields, schema)
+  end
+
+  defp prepare_table_fields(fields, id, _map, _path, _schema, prepared, state)
+       when id == tuple_size(fields),
+       do: {prepared, state}
+
+  defp prepare_table_fields(fields, id, map, path, schema, prepared, state) do
+    {name, type} = elem(fields, id)
+    {type, value} = table_field(type, name, map, schema)
+
+    {prepared, state} =
+      prepare_table_field(id, name, type, value, path, schema, prepared, state)
+
+    prepare_table_fields(fields, id + 1, map, path, schema, prepared, state)
+  end
+
+  defp prepare_table_field(
+         _id,
+         _name,
+         _type,
+         nil,
+         _path,
+         _schema,
+         prepared,
+         state
+       ),
+       do: {prepared, state}
+
+  defp prepare_table_field(
+         _id,
+         _name,
+         {_type, %{default: default}},
+         default,
+         _path,
+         _schema,
+         prepared,
+         state
+       ),
+       do: {prepared, state}
+
+  defp prepare_table_field(
+         id,
+         name,
+         {type, _} = field_type,
+         value,
+         path,
+         schema,
+         prepared,
+         state
+       )
+       when type in [:string, :vector, :table] do
+    {offset, state} = encode(field_type, value, [name | path], schema, state)
+    {[{id, {:offset, offset}} | prepared], state}
+  end
+
+  defp prepare_table_field(id, name, type, value, path, schema, prepared, state) do
+    data = inline(type, value, [name | path], schema)
+    {[{id, {:inline, data, type}} | prepared], state}
+  end
+
+  defp table_field({:union_type, union_name}, name, map, schema) do
+    value = get_field(map, name)
+    {:union, %{members: members}} = Map.fetch!(schema.entities, union_name)
+
+    encoded =
+      case normalize_name(value) do
+        nil ->
+          0
+
+        union_type ->
+          case Map.get(members, union_type) do
+            nil -> wrong_type(:union, value, [name])
+            index -> index + 1
           end
       end
 
-    [<<vector_length::little-size(32)>>, data_buffer_and_data(index_types, values, path, schema)]
+    {{:byte, %{default: 0}}, encoded}
   end
 
-  def write({:enum, %{name: enum_name} = options}, value, path, schema)
-      when is_atom(value) or is_binary(value) do
-    {:enum, %{members: members, type: {type, type_options}}} = Map.get(schema.entities, enum_name)
-
-    # if we got handed some defaults from outside,
-    # we put them in here
-    type_options = Map.merge(type_options, options)
-    value = if is_atom(value), do: Atom.to_string(value), else: value
-    index = Map.get(members, value)
-
-    case index do
-      nil -> throw({:error, {:not_in_enum, value, members}})
-      _ -> write({type, type_options}, index, path, schema)
+  defp table_field({:union, %{type_key: type_key}} = type, name, map, _schema) do
+    case map |> get_field(type_key) |> normalize_name() do
+      nil -> {type, nil}
+      table_name -> {{:table, %{name: table_name}}, get_field(map, name)}
     end
   end
 
-  # write a complete table
-  def write({:table, %{name: table_name}}, map, path, schema)
-      when is_map(map) do
-    {:table, %{fields: fields}} = Map.get(schema.entities, table_name)
+  defp table_field(type, name, map, _schema), do: {type, get_field(map, name)}
 
-    {names_types, values} =
-      Enum.reduce(
-        fields |> Tuple.to_list() |> Enum.reverse(),
-        {[], []},
-        fn
-          {name, {:union_type, union_name}}, {type_acc, value_acc} ->
-            {:union, %{members: members}} = Map.get(schema.entities, union_name)
+  defp emit_table(state, [], schema), do: emit_table(state, [], -1, schema)
 
-            case get_field(map, name) do
-              nil ->
-                type_acc_new = [{{name}, {:byte, %{default: 0}}} | type_acc]
-                value_acc_new = [0 | value_acc]
-                {type_acc_new, value_acc_new}
+  defp emit_table(state, [{highest_field, _data} | _fields] = fields, schema),
+    do: emit_table(state, fields, highest_field, schema)
 
-              union_type ->
-                union_type = normalize_name(union_type)
-                union_index = Map.get(members, union_type)
+  defp emit_table(state, fields, highest_field, schema) do
+    table_start = state.size
 
-                {[{{name}, {:byte, %{default: 0}}} | type_acc], [union_index + 1 | value_acc]}
-            end
+    {locations, state} = Enum.reduce(fields, {[], state}, &emit_table_field(&1, &2, schema))
 
-          {name, {:union, %{type_key: type_key}} = type}, {type_acc, value_acc} ->
-            union_type = map |> get_field(type_key) |> normalize_name()
+    state = align(state, 4)
+    table_offset = state.size + 4
+    object_size = table_offset - table_start
+    vtable = encode_vtable(locations, highest_field, table_offset, object_size)
 
-            field_type =
-              case union_type do
-                nil -> type
-                union_type -> {:table, %{name: union_type}}
-              end
+    case Map.fetch(state.vtables, vtable) do
+      {:ok, vtable_offset} ->
+        displacement = vtable_offset - table_offset
+        state = push_raw(state, <<displacement::signed-little-32>>)
+        {table_offset, state}
 
-            {[{{name}, field_type} | type_acc], [get_field(map, name) | value_acc]}
-
-          {name, type}, {type_acc, value_acc} ->
-            {[{{name}, type} | type_acc], [get_field(map, name) | value_acc]}
-        end
-      )
-
-    # we are putting the keys as {key} as a type
-    # so if something goes wrong it's easy to see
-    # that it was a map key
-    [data_buffer, data] = data_buffer_and_data(names_types, values, path, schema)
-    vtable = vtable(data_buffer)
-    springboard = <<:erlang.iolist_size(vtable) + 4::little-size(32)>>
-    data_buffer_length = <<:erlang.iolist_size([springboard, data_buffer])::little-size(16)>>
-    vtable_length = <<:erlang.iolist_size([vtable, springboard])::little-size(16)>>
-    [vtable_length, data_buffer_length, vtable, springboard, data_buffer, data]
-  end
-
-  # fail if nothing matches
-  def write({type, _}, data, path, _) do
-    throw({:error, {:wrong_type, type, data, Enum.reverse(path)}})
-  end
-
-  # build up [data_buffer, data]
-  # as part of a table or vector
-  def data_buffer_and_data(types, values, path, schema) do
-    data_buffer_and_data(types, values, path, schema, {[], [], 0})
-  end
-
-  def data_buffer_and_data([], [], _path, _schema, {data_buffer, data, _}) do
-    [adjust_for_length(data_buffer), Enum.reverse(data)]
-  end
-
-  # value is nil so we put a null pointer
-  def data_buffer_and_data(
-        [_type | types],
-        [nil | values],
-        path,
-        schema,
-        {scalar_and_pointers, data, data_offset}
-      ) do
-    data_buffer_and_data(
-      types,
-      values,
-      path,
-      schema,
-      {[[] | scalar_and_pointers], data, data_offset}
-    )
-  end
-
-  def data_buffer_and_data(
-        [{name, type} | types],
-        [value | values],
-        path,
-        schema,
-        {scalar_and_pointers, data, data_offset}
-      ) do
-    # for clean error reporting we
-    # need to accumulate the names of tables (depth)
-    # but not the indices for vectors (width)
-    case Utils.scalar?(type) do
-      true ->
-        scalar_data = write(type, value, [name | path], schema)
-
-        data_buffer_and_data(
-          types,
-          values,
-          path,
-          schema,
-          {[scalar_data | scalar_and_pointers], data, data_offset}
-        )
-
-      false ->
-        complex_data = write(type, value, [name | path], schema)
-        complex_data_length = :erlang.iolist_size(complex_data)
-        # for a table we do not point to the start but to the springboard
-        data_pointer =
-          case type do
-            {:table, _} ->
-              [vtable_length, data_buffer_length, vtable | _] = complex_data
-
-              table_header_offset =
-                :erlang.iolist_size([vtable_length, data_buffer_length, vtable])
-
-              data_offset + table_header_offset
-
-            _ ->
-              data_offset
-          end
-
-        data_buffer_and_data(
-          types,
-          values,
-          path,
-          schema,
-          {[data_pointer | scalar_and_pointers], [complex_data | data],
-           complex_data_length + data_offset}
-        )
+      :error ->
+        state = push_raw(state, <<byte_size(vtable)::signed-little-32>>)
+        state = push_raw(state, vtable)
+        vtable_offset = state.size
+        state = %{state | vtables: Map.put(state.vtables, vtable, vtable_offset)}
+        {table_offset, state}
     end
   end
 
-  # so this is a mix of scalars (binary)
-  # and unadjusted pointers (integers)
-  # we adjust the pointers to account
-  # for their poisition in the buffer
-  def adjust_for_length(data_buffer) do
-    adjust_for_length(data_buffer, {[], 0})
+  defp emit_table_field({id, {:offset, offset}}, {locations, state}, _schema) do
+    {_field_offset, state} = push_offset(state, offset)
+    {[{id, state.size} | locations], state}
   end
 
-  def adjust_for_length([], {acc, _}) do
-    acc
+  defp emit_table_field(
+         {id, {:inline, data, type}},
+         {locations, state},
+         schema
+       ) do
+    state = push_aligned(state, data, alignment(type, schema))
+    {[{id, state.size} | locations], state}
   end
 
-  # this is null pointers, we pass
-  def adjust_for_length([[] | data_buffer], {acc, offset}) do
-    adjust_for_length(data_buffer, {[[] | acc], offset})
+  defp encode_vtable(locations, highest_field, table_offset, object_size) do
+    vtable_size = 4 + (highest_field + 1) * 2
+    entries = encode_vtable_entries(locations, table_offset, 0)
+
+    [<<vtable_size::unsigned-little-16, object_size::unsigned-little-16>>, entries]
+    |> IO.iodata_to_binary()
   end
 
-  # this is a scalar, we just pass the data
-  def adjust_for_length([scalar | data_buffer], {acc, offset}) when is_binary(scalar) do
-    adjust_for_length(data_buffer, {[scalar | acc], offset + byte_size(scalar)})
+  defp encode_vtable_entries([], _table_offset, _id), do: []
+
+  defp encode_vtable_entries([{id, location} | locations], table_offset, id) do
+    [
+      <<table_offset - location::unsigned-little-16>>
+      | encode_vtable_entries(locations, table_offset, id + 1)
+    ]
   end
 
-  # referenced data, we get it and recurse
-  def adjust_for_length([pointer | data_buffer], {acc, offset}) when is_integer(pointer) do
-    offset_new = offset + 4
-    pointer_bin = <<pointer + offset_new::little-size(32)>>
-    adjust_for_length(data_buffer, {[pointer_bin | acc], offset_new})
+  defp encode_vtable_entries(locations, table_offset, id) do
+    [<<0::unsigned-little-16>> | encode_vtable_entries(locations, table_offset, id + 1)]
   end
 
-  # we get a nested structure so we pass it untouched
-  def adjust_for_length([iolist | data_buffer], {acc, offset}) when is_list(iolist) do
-    adjust_for_length(data_buffer, {[iolist | acc], offset + 4})
-  end
+  defp inline({:enum, %{name: enum_name} = options}, value, path, schema) do
+    {:enum, %{members: members, type: {type, type_options}}} =
+      Map.fetch!(schema.entities, enum_name)
 
-  def vtable(data_buffer) do
-    Enum.reverse(vtable(data_buffer, {[], 4}))
-  end
+    value = normalize_name(value)
 
-  def vtable([], {acc, _offset}) do
-    acc
-  end
-
-  def vtable([data | data_buffer], {acc, offset}) do
-    case data do
-      [] ->
-        # this is an undefined value, we put a null pointer
-        # and leave the offset untouched
-        vtable(data_buffer, {[<<0::little-size(16)>> | acc], offset})
-
-      scalar_or_pointer ->
-        vtable(
-          data_buffer,
-          {[<<offset::little-size(16)>> | acc], offset + :erlang.iolist_size(scalar_or_pointer)}
-        )
+    case Map.get(members, value) do
+      nil -> wrong_type(:enum, value, path)
+      index -> inline({type, Map.merge(type_options, options)}, index, path, schema)
     end
   end
+
+  defp inline({:struct, %{name: struct_name}}, map, path, schema) when is_map(map) do
+    {:struct, %{members: members}} = Map.fetch!(schema.entities, struct_name)
+
+    Enum.map(members, fn {name, type} ->
+      inline({type, %{}}, get_field(map, name), [name | path], schema)
+    end)
+  end
+
+  defp inline({:bool, _}, true, _path, _schema), do: <<1>>
+  defp inline({:bool, _}, false, _path, _schema), do: <<0>>
+
+  defp inline({:byte, _}, value, _path, _schema)
+       when is_integer(value) and value >= -128 and value <= 127,
+       do: <<value::signed-8>>
+
+  defp inline({:ubyte, _}, value, _path, _schema)
+       when is_integer(value) and value >= 0 and value <= 255,
+       do: <<value::unsigned-8>>
+
+  defp inline({:short, _}, value, _path, _schema)
+       when is_integer(value) and value >= -32_768 and value <= 32_767,
+       do: <<value::signed-little-16>>
+
+  defp inline({:ushort, _}, value, _path, _schema)
+       when is_integer(value) and value >= 0 and value <= 65_535,
+       do: <<value::unsigned-little-16>>
+
+  defp inline({:int, _}, value, _path, _schema)
+       when is_integer(value) and value >= -2_147_483_648 and value <= 2_147_483_647,
+       do: <<value::signed-little-32>>
+
+  defp inline({:uint, _}, value, _path, _schema)
+       when is_integer(value) and value >= 0 and value <= 4_294_967_295,
+       do: <<value::unsigned-little-32>>
+
+  defp inline({:float, _}, value, _path, _schema)
+       when is_number(value) and value >= -3.4e+38 and value <= 3.4e+38,
+       do: <<value::float-little-32>>
+
+  defp inline({:long, _}, value, _path, _schema)
+       when is_integer(value) and value >= -9_223_372_036_854_775_808 and
+              value <= 9_223_372_036_854_775_807,
+       do: <<value::signed-little-64>>
+
+  defp inline({:ulong, _}, value, _path, _schema)
+       when is_integer(value) and value >= 0 and value <= 18_446_744_073_709_551_615,
+       do: <<value::unsigned-little-64>>
+
+  defp inline({:double, _}, value, _path, _schema)
+       when is_number(value) and value >= -1.7e+308 and value <= 1.7e+308,
+       do: <<value::float-little-64>>
+
+  defp inline({type, _}, value, path, _schema), do: wrong_type(type, value, path)
+
+  defp without_default({type, options}) when is_map(options),
+    do: {type, Map.delete(options, :default)}
+
+  defp without_default(type), do: type
+
+  defp alignment({:enum, %{name: enum_name}}, schema) do
+    {:enum, %{type: type}} = Map.fetch!(schema.entities, enum_name)
+    alignment(type, schema)
+  end
+
+  defp alignment({:struct, _}, _schema), do: 1
+  defp alignment({type, _}, _schema) when type in [:string, :vector, :table], do: 4
+  defp alignment({type, _}, _schema), do: Flatbuffer.Utils.scalar_size(type)
+  defp alignment(type, _schema), do: Flatbuffer.Utils.scalar_size(type)
+
+  defp push_raw(%State{} = state, data) when is_binary(data),
+    do: %{state | chunks: [data | state.chunks], size: state.size + byte_size(data)}
+
+  defp push_raw(%State{} = state, data),
+    do: %{state | chunks: [data | state.chunks], size: state.size + :erlang.iolist_size(data)}
+
+  defp push_offset(state, target) do
+    state = align(state, 4)
+    offset = state.size - target + 4
+    state = push_raw(state, <<offset::unsigned-little-32>>)
+    {state.size, state}
+  end
+
+  defp push_aligned(state, data, alignment) do
+    state
+    |> align(alignment)
+    |> push_raw(data)
+  end
+
+  defp align(state, alignment), do: pre_align(state, 0, alignment)
+
+  defp pre_align(state, future_size, alignment) do
+    padding = Integer.mod(-(state.size + future_size), alignment)
+    state = track_alignment(state, alignment)
+
+    case padding do
+      0 -> state
+      bytes -> push_raw(state, :binary.copy(<<0>>, bytes))
+    end
+  end
+
+  defp track_alignment(%State{min_align: current} = state, alignment)
+       when current >= alignment,
+       do: state
+
+  defp track_alignment(state, alignment), do: %{state | min_align: alignment}
 
   defp get_field(map, name) do
     case Map.fetch(map, name) do
@@ -332,9 +385,6 @@ defmodule Flatbuffer.Writer do
   defp normalize_name(name) when is_atom(name), do: Atom.to_string(name)
   defp normalize_name(name), do: name
 
-  def scalar?(:string), do: false
-  def scalar?({:vector, _}), do: false
-  def scalar?({:table, _}), do: false
-  def scalar?({:enum, _}), do: true
-  def scalar?(_), do: true
+  defp wrong_type(type, data, path),
+    do: throw({:error, {:wrong_type, type, data, Enum.reverse(path)}})
 end

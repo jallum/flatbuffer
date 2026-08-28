@@ -63,9 +63,9 @@ defmodule Flatbuffer.Reading do
   def read({:table, %{name: table_name}}, c, schema) do
     {:table, %{fields: fields}} = Map.get(schema.entities, table_name)
 
-    table = Cursor.jump_i32(c)
+    table = Cursor.jump_u32(c)
     vtable = Cursor.rjump_i32(table)
-    count = div(Cursor.get_i16(vtable) - 4, 2)
+    count = div(Cursor.get_u16(vtable) - 4, 2)
 
     read_table(%{}, count, Tuple.to_list(fields), Cursor.skip(vtable, 4), table, schema)
   end
@@ -101,7 +101,7 @@ defmodule Flatbuffer.Reading do
          table,
          schema
        ) do
-    data_offset = Cursor.get_i16(vtable)
+    data_offset = Cursor.get_u16(vtable)
     index = if data_offset == 0, do: 0, else: Cursor.skip(table, data_offset) |> Cursor.get_u8()
 
     row =
@@ -127,7 +127,7 @@ defmodule Flatbuffer.Reading do
          table,
          schema
        ) do
-    data_offset = Cursor.get_i16(vtable)
+    data_offset = Cursor.get_u16(vtable)
 
     row =
       case {data_offset, Map.get(row, type_key)} do
@@ -153,7 +153,7 @@ defmodule Flatbuffer.Reading do
          table,
          schema
        ) do
-    data_offset = Cursor.get_i16(vtable)
+    data_offset = Cursor.get_u16(vtable)
 
     row =
       if data_offset != 0 do
