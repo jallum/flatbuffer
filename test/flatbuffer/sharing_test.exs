@@ -72,6 +72,24 @@ defmodule Flatbuffer.SharingTest do
 
       refute vtable_target(buffer, complete) == vtable_target(buffer, partial)
     end
+
+    test "object size remains part of vtable identity" do
+      schema =
+        schema!("""
+        table Item { value: long; }
+        table Root { items: [Item]; }
+        root_type Root;
+        """)
+
+      buffer = Flatbuffer.to_binary(%{items: [%{value: 1}, %{value: 2}]}, schema)
+      [first, second] = table_vector_targets(buffer, root_table(buffer), 0)
+      {first_size, first_layout} = vtable_identity(buffer, first)
+      {second_size, second_layout} = vtable_identity(buffer, second)
+
+      assert first_layout == second_layout
+      refute first_size == second_size
+      refute vtable_target(buffer, first) == vtable_target(buffer, second)
+    end
   end
 
   describe "shared strings" do
@@ -218,6 +236,15 @@ defmodule Flatbuffer.SharingTest do
   defp vtable_displacement(buffer, table) do
     <<_::binary-size(table), offset::signed-little-32, _::binary>> = buffer
     offset
+  end
+
+  defp vtable_identity(buffer, table) do
+    vtable = vtable_target(buffer, table)
+
+    <<_::binary-size(vtable), vtable_size::unsigned-little-16, object_size::unsigned-little-16,
+      rest::binary>> = buffer
+
+    {object_size, binary_part(rest, 0, vtable_size - 4)}
   end
 
   defp table_field(buffer, table, field_id) do

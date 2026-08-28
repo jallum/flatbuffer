@@ -181,12 +181,7 @@ defmodule Flatbuffer.Writer do
 
   defp table_field(type, name, map, _schema), do: {type, get_field(map, name)}
 
-  defp emit_table(state, [], schema), do: emit_table(state, [], -1, schema)
-
-  defp emit_table(state, [{highest_field, _data} | _fields] = fields, schema),
-    do: emit_table(state, fields, highest_field, schema)
-
-  defp emit_table(state, fields, highest_field, schema) do
+  defp emit_table(state, fields, schema) do
     table_start = state.size
 
     {locations, state} = Enum.reduce(fields, {[], state}, &emit_table_field(&1, &2, schema))
@@ -194,19 +189,21 @@ defmodule Flatbuffer.Writer do
     state = align(state, 4)
     table_offset = state.size + 4
     object_size = table_offset - table_start
-    vtable = encode_vtable(locations, highest_field, table_offset, object_size)
+    layout = vtable_layout(locations, table_offset, 0)
+    vtable_key = {object_size, layout}
 
-    case Map.fetch(state.vtables, vtable) do
+    case Map.fetch(state.vtables, vtable_key) do
       {:ok, vtable_offset} ->
         displacement = vtable_offset - table_offset
         state = push_raw(state, <<displacement::signed-little-32>>)
         {table_offset, state}
 
       :error ->
-        state = push_raw(state, <<byte_size(vtable)::signed-little-32>>)
+        {vtable_size, vtable} = encode_vtable(object_size, layout)
+        state = push_raw(state, <<vtable_size::signed-little-32>>)
         state = push_raw(state, vtable)
         vtable_offset = state.size
-        state = %{state | vtables: Map.put(state.vtables, vtable, vtable_offset)}
+        state = %{state | vtables: Map.put(state.vtables, vtable_key, vtable_offset)}
         {table_offset, state}
     end
   end
@@ -225,25 +222,19 @@ defmodule Flatbuffer.Writer do
     {[{id, state.size} | locations], state}
   end
 
-  defp encode_vtable(locations, highest_field, table_offset, object_size) do
-    vtable_size = 4 + (highest_field + 1) * 2
-    entries = encode_vtable_entries(locations, table_offset, 0)
+  defp vtable_layout([], _table_offset, _id), do: []
 
-    [<<vtable_size::unsigned-little-16, object_size::unsigned-little-16>>, entries]
-    |> IO.iodata_to_binary()
-  end
+  defp vtable_layout([{id, location} | locations], table_offset, id),
+    do: [table_offset - location | vtable_layout(locations, table_offset, id + 1)]
 
-  defp encode_vtable_entries([], _table_offset, _id), do: []
+  defp vtable_layout(locations, table_offset, id),
+    do: [0 | vtable_layout(locations, table_offset, id + 1)]
 
-  defp encode_vtable_entries([{id, location} | locations], table_offset, id) do
-    [
-      <<table_offset - location::unsigned-little-16>>
-      | encode_vtable_entries(locations, table_offset, id + 1)
-    ]
-  end
+  defp encode_vtable(object_size, layout) do
+    vtable_size = 4 + length(layout) * 2
+    entries = Enum.map(layout, &<<&1::unsigned-little-16>>)
 
-  defp encode_vtable_entries(locations, table_offset, id) do
-    [<<0::unsigned-little-16>> | encode_vtable_entries(locations, table_offset, id + 1)]
+    {vtable_size, [<<vtable_size::unsigned-little-16, object_size::unsigned-little-16>>, entries]}
   end
 
   defp inline({:enum, %{name: enum_name} = options}, value, path, schema) do
