@@ -19,10 +19,19 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          # Loose versions: resolve to the latest matching patch release.
-          # Old pins rot — OTP 27.1's ssl rejects hex.pm's current cert chain.
+          # Loose versions resolve to the latest matching patch release —
+          # exact pins rot (OTP 27.1's ssl rejects hex.pm's current certs).
+          # Oldest supported toolchain (mix.exs requires ~> 1.18)
           - elixir: "1.18"
-            otp: "27"
+            otp: "27.3"
+          # Matches local development
+          - elixir: "1.19"
+            otp: "28.3"
+          # Newest toolchain; the lint cell runs the version-independent
+          # checks once.
+          - elixir: "1.20"
+            otp: "29.0"
+            lint: lint
             lint: lint
 
     steps:
@@ -50,7 +59,7 @@ jobs:
         run: mix deps.unlock --check-unused
         if: ${{ matrix.lint }}
       - name: Compile lint
-        run: mix compile --warning-as-errors
+        run: mix compile --warnings-as-errors
         if: ${{ matrix.lint }}
       - name: Run tests
         run: mix test
