@@ -18,7 +18,9 @@ defmodule Flatbuffer.Schema.NamespaceTest do
 
       assert {:ok,
               %Schema{
-                entities: %{^expected_full_table_name => {:table, %{fields: [], indices: %{}}}},
+                entities: %{
+                  ^expected_full_table_name => {:table, %{fields: {}, field_ids: %{}}}
+                },
                 root_type: {:table, %{name: ^expected_full_table_name}},
                 id: nil
               }} = Schema.from_string(schema)
@@ -38,7 +40,9 @@ defmodule Flatbuffer.Schema.NamespaceTest do
 
     assert {:ok,
             %Schema{
-              entities: %{^expected_full_table_name => {:table, %{fields: [], indices: %{}}}},
+              entities: %{
+                ^expected_full_table_name => {:table, %{fields: {}, field_ids: %{}}}
+              },
               root_type: {:table, %{name: ^expected_full_table_name}},
               id: nil
             }} = Schema.from_string(schema)
@@ -59,7 +63,9 @@ defmodule Flatbuffer.Schema.NamespaceTest do
 
     assert {:ok,
             %Schema{
-              entities: %{^expected_full_table_name => {:table, %{fields: [], indices: %{}}}},
+              entities: %{
+                ^expected_full_table_name => {:table, %{fields: {}, field_ids: %{}}}
+              },
               root_type: {:table, %{name: ^expected_full_table_name}},
               id: nil
             }} = Schema.from_string(schema)

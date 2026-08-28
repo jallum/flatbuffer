@@ -1,4 +1,4 @@
-Nonterminals root definition option fields field key_def value attribute_def attributes enums enum_def unions union_def atom type struct_fields.
+Nonterminals root definition option fields field key_def value attribute_def attributes enums enum_def unions union_def identifier type struct_fields.
 Terminals  table struct enum union namespace root_type include attribute file_identifier file_extension float int bool string '-' '}' '{' '(' ')' '['']' ';' ',' ':' '=' quote.
 Rootsymbol root.
 
@@ -29,9 +29,9 @@ enums -> enum_def             : [ '$1' ].
 enums -> enum_def ',' enums   : [ '$1' | '$3'].
 enums -> enum_def ','         : [ '$1' ].
 
-enum_def -> atom                : '$1'.
-enum_def -> atom '=' int        : {'$1', '$3'}.
-enum_def -> atom '=' atom       : {'$1', '$3'}.
+enum_def -> identifier                : '$1'.
+enum_def -> identifier '=' int        : {'$1', get_value('$3')}.
+enum_def -> identifier '=' identifier : {'$1', '$3'}.
 
 % unions
 unions -> union_def             : [ '$1' ].
@@ -47,9 +47,9 @@ fields -> field ';' fields  : [ '$1' | '$3' ].
 field -> key_def                    : '$1'.
 field -> key_def '(' attributes ')' : '$1'.
 
-key_def -> atom ':' type              : {'$1', '$3'}.
-key_def -> atom ':' '[' type ']'      : {'$1', {vector, '$4'}}.
-key_def -> atom ':' type '=' value    : {'$1', {'$3', '$5'}}.
+key_def -> identifier ':' type              : {'$1', '$3'}.
+key_def -> identifier ':' '[' type ']'      : {'$1', {vector, '$4'}}.
+key_def -> identifier ':' type '=' value    : {'$1', {'$3', '$5'}}.
 
 attributes -> attributes ',' attribute_def. %ignore
 attributes -> attribute_def.                %ignore
@@ -63,9 +63,9 @@ value -> '-' float : -get_value('$2').
 value -> int       : get_value('$1').
 value -> float     : get_value('$1').
 value -> bool      : get_value('$1').
-value -> atom      : '$1'.
+value -> identifier : '$1'.
 
-atom -> string : get_value_atom('$1').
+identifier -> string : get_value_bin('$1').
 
 % struct fields
 struct_fields -> field ';'             : [ '$1' ].
@@ -73,7 +73,6 @@ struct_fields -> field ';' struct_fields : [ '$1' | '$3' ].
 
 Erlang code.
 
-get_value_atom({_Token, _Line, Value})  -> list_to_atom(Value).
 get_value_bin({_Token, _Line, Value})  -> list_to_binary(Value).
 get_value({_Token, _Line, Value})      -> Value.
 

@@ -11,6 +11,12 @@ defmodule Flatbuffer.Schema do
   - Schema includes and namespaces
   - File identifiers
 
+  Table fields are stored once in a tuple indexed by their FlatBuffer field ID.
+  Each table also has a `field_ids` map from binary field name to ID for direct
+  lookup. By default, decoded field, struct, and enum names are pre-resolved to
+  atoms once during schema construction. Pass `safe: true` to keep those names
+  as binaries and avoid interning schema-controlled atoms.
+
   ## Example
       {:ok, schema} = Schema.from_file("schema.fbs")
       # or
@@ -23,9 +29,10 @@ defmodule Flatbuffer.Schema do
   @type t :: %__MODULE__{
           entities: %{type_name() => type_def()},
           id: binary() | nil,
-          root_type: type_ref()
+          root_type: type_ref(),
+          safe: boolean()
         }
-  defstruct entities: %{}, root_type: nil, id: nil
+  defstruct entities: %{}, root_type: nil, id: nil, safe: false
 
   @type type_name :: String.t()
 
@@ -34,6 +41,7 @@ defmodule Flatbuffer.Schema do
           | {:struct, %{name: type_name()}}
           | {:enum, %{name: type_name()}}
           | {:union, %{name: type_name()}}
+          | {:union_type, type_name()}
           | {:vector, type_ref()}
           | {:bool, %{default: boolean()}}
           | {:byte, %{default: integer()}}
@@ -54,13 +62,13 @@ defmodule Flatbuffer.Schema do
           | union_def()
           | enum_def()
 
-  @type field_name :: atom()
+  @type field_name :: atom() | String.t()
 
   @type table_def ::
           {:table,
            %{
-             fields: [{field_name(), type_ref()}],
-             indices: %{field_name() => {integer(), type_ref()}}
+             fields: tuple(),
+             field_ids: %{String.t() => non_neg_integer()}
            }}
 
   @type struct_def :: {:struct, %{members: [{field_name(), type_def()}]}}
@@ -74,7 +82,7 @@ defmodule Flatbuffer.Schema do
              }
            }}
 
-  @type enum_name :: atom()
+  @type enum_name :: atom() | String.t()
   @type enum_def :: {:enum, %{members: %{enum_name() => integer(), integer() => enum_name()}}}
 
   @type resolver_fn :: (filename :: String.t() -> String.t())
@@ -92,8 +100,9 @@ defmodule Flatbuffer.Schema do
   ## Parameters
 
     - `file_name` (String.t()): The path to the schema file.
-    - `opts` ([resolver: resolver_fn()]): Optional keyword list of options.
+    - `opts`: Optional keyword list of options.
       - `:resolver` (resolver_fn()): A function to resolve imports or includes within the schema.
+      - `:safe` (boolean()): Keep decoded schema-defined names as binaries instead of atoms. Defaults to `false`.
 
   ## Returns
 
@@ -107,15 +116,18 @@ defmodule Flatbuffer.Schema do
       iex> Flatbuffer.Schema.from_file("path/to/schema.fbs", resolver: &my_resolver/1)
       {:ok, schema}
   """
-  @spec from_file(file_name :: String.t(), opts :: [resolver: resolver_fn()]) ::
+  @spec from_file(
+          file_name :: String.t(),
+          opts :: [resolver: resolver_fn(), safe: boolean()]
+        ) ::
           {:ok, t()} | from_errors()
   def from_file(file_name, opts \\ []) do
     with resolver_fn <- opts[:resolver] || (&File.read/1),
          true <- is_function(resolver_fn, 1) || {:error, {:no_resolver, file_name}},
          {:ok, file_contents} <- resolver_fn.(file_name),
          {:ok, {entities, directives}} <- chain_load(file_name, file_contents, resolver_fn),
-         {:ok, entities} <- resolve_types(entities) do
-      {:ok, new(entities, directives)}
+         {:ok, entities} <- resolve_types(entities, Keyword.get(opts, :safe, false)) do
+      {:ok, new(entities, directives, opts)}
     end
   end
 
@@ -125,8 +137,9 @@ defmodule Flatbuffer.Schema do
   ## Parameters
 
     - `string` (String.t()): The FlatBuffer schema as a string.
-    - `opts` ([resolver: resolver_fn()]): Optional keyword list of options.
+    - `opts`: Optional keyword list of options.
       - `:resolver` (resolver_fn()): A function used to resolve schema dependencies.
+      - `:safe` (boolean()): Keep decoded schema-defined names as binaries instead of atoms. Defaults to `false`.
 
   ## Returns
 
@@ -142,20 +155,24 @@ defmodule Flatbuffer.Schema do
     ...(1)> \"""
     iex(2)> {:ok, parsed_schema} = Flatbuffer.Schema.from_string(schema)
   """
-  @spec from_string(string :: String.t(), opts :: [resolver: resolver_fn()]) ::
+  @spec from_string(
+          string :: String.t(),
+          opts :: [resolver: resolver_fn(), safe: boolean()]
+        ) ::
           {:ok, t()} | from_errors()
   def from_string(string, opts \\ []) do
     with {:ok, {entities, directives}} <- chain_load(:string, string, opts[:resolver]),
-         {:ok, entities} <- resolve_types(entities) do
-      {:ok, new(entities, directives)}
+         {:ok, entities} <- resolve_types(entities, Keyword.get(opts, :safe, false)) do
+      {:ok, new(entities, directives, opts)}
     end
   end
 
-  defp new(entities, directives) do
+  defp new(entities, directives, opts) do
     %__MODULE__{
       entities: entities,
       root_type: directives[:root_type],
-      id: directives[:file_identifier]
+      id: directives[:file_identifier],
+      safe: Keyword.get(opts, :safe, false)
     }
   end
 
@@ -271,7 +288,7 @@ defmodule Flatbuffer.Schema do
 
   # this preprocesses the schema in order to keep the read/write code as simple
   # as possible correlate tables with names and define defaults explicitly
-  defp resolve_types(entities) do
+  defp resolve_types(entities, safe) do
     {:ok,
      Enum.reduce(
        entities,
@@ -280,20 +297,21 @@ defmodule Flatbuffer.Schema do
          # for a tables we transform the types to explicitly signify vectors,
          # tables, and enums
          {key, {:table, fields}}, acc ->
-           Map.put(acc, key, {:table, table_options(fields, entities)})
+           Map.put(acc, key, {:table, table_options(fields, entities, safe)})
 
          # for enums we change the list of options into a map for faster lookup
          # when writing and reading
          {key, {{:enum, type}, members}}, acc ->
-           members = enumerate_members(members)
+           members = enumerate_members(members, safe)
            Map.put(acc, key, {:enum, %{type: {type, %{default: 0}}, members: members}})
 
          {key, {:union, members}}, acc ->
-           members = enumerate_members(members)
+           members = enumerate_members(members, true)
            Map.put(acc, key, {:union, %{members: members}})
 
          {key, {:struct, fields}}, acc ->
-           Map.put(acc, key, {:struct, %{members: fields}})
+           members = Enum.map(fields, fn {name, type} -> {output_name(name, safe), type} end)
+           Map.put(acc, key, {:struct, %{members: members}})
        end
      )}
   catch
@@ -301,47 +319,68 @@ defmodule Flatbuffer.Schema do
       error
   end
 
-  defp enumerate_members(members) do
+  defp enumerate_members(members, safe) do
+    {members, _next_value} =
+      Enum.reduce(members, {%{}, 0}, fn member, {acc, next_value} ->
+        {name, value} = enum_member(member, acc, next_value)
+
+        members =
+          acc
+          |> Map.put(name, value)
+          |> Map.put(value, output_name(name, safe))
+
+        {members, value + 1}
+      end)
+
     members
-    |> Enum.with_index()
-    |> Enum.reduce(
-      %{},
-      fn {field, index}, acc ->
-        Map.put(acc, field, index) |> Map.put(index, field)
-      end
-    )
   end
 
-  defp table_options(fields, entities) do
-    {_, fields, indices} =
+  defp enum_member(name, _members, next_value) when is_binary(name), do: {name, next_value}
+  defp enum_member({name, value}, _members, _next_value) when is_integer(value), do: {name, value}
+
+  defp enum_member({name, alias_name}, members, _next_value),
+    do: {name, Map.fetch!(members, alias_name)}
+
+  defp table_options(fields, entities, safe) do
+    {_, fields, field_ids} =
       fields
       |> Enum.reduce({0, [], %{}}, fn
-        {name, type}, {index, fields, indices} ->
-          resolved_type = resolve_type(type, entities)
+        {name, type}, {id, fields, field_ids} ->
+          resolved_type = type |> resolve_type(entities) |> resolve_output_default(safe)
 
-          updated_indices =
+          {updated_fields, updated_field_ids} =
             case resolved_type do
               {:union, %{name: union_name}} ->
-                indices
-                |> Map.put(name, {index, resolved_type})
-                |> Map.put(:"#{name}_type", {index, {:union_type, union_name}})
+                type_name = "#{name}_type"
+                type_key = output_name(type_name, safe)
+                union_type = {:union, %{name: union_name, type_key: type_key}}
+
+                {
+                  [
+                    {output_name(name, safe), union_type},
+                    {type_key, {:union_type, union_name}}
+                    | fields
+                  ],
+                  field_ids |> Map.put(type_name, id) |> Map.put(name, id + 1)
+                }
 
               _ ->
-                Map.put(indices, name, {index, resolved_type})
+                {[{output_name(name, safe), resolved_type} | fields],
+                 Map.put(field_ids, name, id)}
             end
 
           {
-            next_index(index, resolved_type),
-            [{name, resolved_type} | fields],
-            updated_indices
+            next_id(id, resolved_type),
+            updated_fields,
+            updated_field_ids
           }
       end)
 
-    %{fields: Enum.reverse(fields), indices: indices}
+    %{fields: fields |> Enum.reverse() |> List.to_tuple(), field_ids: field_ids}
   end
 
-  defp next_index(index, {:union, _}), do: index + 2
-  defp next_index(index, _), do: index + 1
+  defp next_id(id, {:union, _}), do: id + 2
+  defp next_id(id, _), do: id + 1
 
   defp resolve_type({:vector, type}, entities),
     do: {:vector, resolve_type(type, entities)}
@@ -380,4 +419,12 @@ defmodule Flatbuffer.Schema do
 
   defp with_default_value({type, %{} = options}, default),
     do: {type, Map.put(options, :default, default)}
+
+  defp resolve_output_default({:enum, %{default: default} = options}, safe),
+    do: {:enum, %{options | default: output_name(default, safe)}}
+
+  defp resolve_output_default(type, _safe), do: type
+
+  defp output_name(name, true), do: name
+  defp output_name(name, false), do: String.to_atom(name)
 end

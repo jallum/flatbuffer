@@ -32,27 +32,23 @@ defmodule FlatBuffer.Schema.UnionTypesTest do
                   "bye" =>
                     {:table,
                      %{
-                       fields: [greeting: {:int, %{default: 0}}],
-                       indices: %{greeting: {0, {:int, %{default: 0}}}}
+                       fields: {{:greeting, {:int, %{default: 0}}}},
+                       field_ids: %{"greeting" => 0}
                      }},
                   "command" =>
                     {:union, %{members: %{0 => "hello", 1 => "bye", "bye" => 1, "hello" => 0}}},
                   "command_root" =>
                     {:table,
                      %{
-                       fields: [
-                         data: {:union, %{name: "command"}},
-                         additions_value: {:int, %{default: 0}}
-                       ],
-                       indices: %{
-                         data: {0, {:union, %{name: "command"}}},
-                         additions_value: {2, {:int, %{default: 0}}},
-                         data_type: {0, {:union_type, "command"}}
-                       }
+                       fields: {
+                         {:data_type, {:union_type, "command"}},
+                         {:data, {:union, %{name: "command", type_key: :data_type}}},
+                         {:additions_value, {:int, %{default: 0}}}
+                       },
+                       field_ids: %{"data_type" => 0, "data" => 1, "additions_value" => 2}
                      }},
                   "hello" =>
-                    {:table,
-                     %{fields: [salute: {:string, %{}}], indices: %{salute: {0, {:string, %{}}}}}}
+                    {:table, %{fields: {{:salute, {:string, %{}}}}, field_ids: %{"salute" => 0}}}
                 },
                 root_type: {:table, %{name: "command_root"}},
                 id: "cmnd"

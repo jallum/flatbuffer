@@ -34,31 +34,32 @@ iex(1)> {:ok, schema} = Flatbuffer.Schema.from_file("Example.fbs")
    entities: %{
      "Color" => {:table,
       %{
-        fields: [
-          red: {:ubyte, %{default: 0}},
-          green: {:ubyte, %{default: 0}},
-          blue: {:ubyte, %{default: 0}}
-        ],
-        indices: %{
-          blue: {2, {:ubyte, %{default: 0}}},
-          green: {1, {:ubyte, %{default: 0}}},
-          red: {0, {:ubyte, %{default: 0}}}
+        fields: {
+          {:red, {:ubyte, %{default: 0}}},
+          {:green, {:ubyte, %{default: 0}}},
+          {:blue, {:ubyte, %{default: 0}}}
+        },
+        field_ids: %{
+          "red" => 0,
+          "green" => 1,
+          "blue" => 2
         }
       }},
      "Root" => {:table,
       %{
-        fields: [
-          foreground: {:table, %{name: "Color"}},
-          background: {:table, %{name: "Color"}}
-        ],
-        indices: %{
-          foreground: {0, {:table, %{name: "Color"}}},
-          background: {1, {:table, %{name: "Color"}}}
+        fields: {
+          {:foreground, {:table, %{name: "Color"}}},
+          {:background, {:table, %{name: "Color"}}}
+        },
+        field_ids: %{
+          "foreground" => 0,
+          "background" => 1
         }
       }}
    },
    root_type: {:table, %{name: "Root"}},
-   id: nil
+   id: nil,
+   safe: false
  }}
  ```
 
@@ -81,14 +82,33 @@ iex(4)> Flatbuffer.read!(color_scheme_fb, schema)
 ```
 
 Or we can `get` a value from the buffer without decoding the whole thing. This
-can be done either with an atom key (for the root-table fields) or with a 
-key-path composed of a list of atoms and integers:
+can be done either with an atom key (for root-table fields) or with a key-path
+composed of atoms and vector indices. Binary field names are also accepted:
 ```elixir
 iex(5)> Flatbuffer.get(color_scheme_fb, [:background], schema)
 %{blue: 128, green: 100, red: 0}
 iex(6)> Flatbuffer.get(color_scheme_fb, [:background, :green], schema)
 100
 ```
+
+### Safe schemas
+
+By default, schema-defined field, struct, and enum names are converted to atoms
+once when the schema is built, preserving the library's atom-keyed API. Because
+atoms are not garbage-collected, use `safe: true` for untrusted or dynamically
+varying schemas:
+
+```elixir
+iex> {:ok, safe_schema} = Flatbuffer.Schema.from_file("Example.fbs", safe: true)
+iex> Flatbuffer.read!(color_scheme_fb, safe_schema)
+%{
+  "foreground" => %{"blue" => 255, "green" => 20, "red" => 128},
+  "background" => %{"blue" => 128, "green" => 100, "red" => 0}
+}
+```
+
+Safe schemas keep decoded field, struct, and enum names as binaries and never
+intern schema-controlled names as atoms.
 
 ## Conveniences:
 
@@ -99,7 +119,7 @@ module:
 defmodule ColorScheme do
   use Flatbuffer,
     path: "priv/fb",
-    schema: "color_scheme.fbs"
+    file: "color_scheme.fbs"
 end
 ```
 
@@ -117,9 +137,7 @@ iex(2)> color_scheme_fb = ColorScheme.to_binary(color_scheme)
   255, 10, 0, 6, 0, 0, ...>>
 ```
 
-We can `get` a value from the buffer without decoding the whole thing. This
-can be done either with an atom key (for the root-table fields) or with a 
-key-path composed of a list of atoms and integers:
+We can `get` a value from the buffer without decoding the whole thing:
 
 ```elixir
 iex(3)> ColorScheme.get(color_scheme_fb, :background)

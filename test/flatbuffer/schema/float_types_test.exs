@@ -27,8 +27,8 @@ defmodule Flatbuffer.Schema.FloatTypesTest do
                    ^expected_table_name =>
                      {:table,
                       %{
-                        fields: [v: {^type, %{default: 0}}],
-                        indices: %{v: {0, {^type, %{default: 0}}}}
+                        fields: {{:v, {^type, %{default: 0}}}},
+                        field_ids: %{"v" => 0}
                       }}
                  },
                  id: nil,
@@ -57,8 +57,8 @@ defmodule Flatbuffer.Schema.FloatTypesTest do
                    ^expected_table_name =>
                      {:table,
                       %{
-                        fields: [v: {^type, %{default: ^expected_default}}],
-                        indices: %{v: {0, {^type, %{default: ^expected_default}}}}
+                        fields: {{:v, {^type, %{default: ^expected_default}}}},
+                        field_ids: %{"v" => 0}
                       }}
                  },
                  id: nil,
