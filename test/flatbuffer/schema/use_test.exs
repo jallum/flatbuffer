@@ -7,6 +7,13 @@ defmodule Flatbuffer.Schema.UseTest do
       file: "test_schema.fbs"
   end
 
+  defmodule SafeTestSchema do
+    use Flatbuffer,
+      path: "test/examples",
+      file: "test_schema.fbs",
+      safe: true
+  end
+
   describe "When using a schema to build a module" do
     test "it will build the schema correctly" do
       assert %Flatbuffer.Schema{
@@ -14,8 +21,8 @@ defmodule Flatbuffer.Schema.UseTest do
                  "test.Table" =>
                    {:table,
                     %{
-                      fields: [foo: {:int, %{default: 0}}],
-                      indices: %{foo: {0, {:int, %{default: 0}}}}
+                      fields: {{:foo, {:int, %{default: 0}}}},
+                      field_ids: %{"foo" => 0}
                     }}
                },
                id: nil,
@@ -31,6 +38,8 @@ defmodule Flatbuffer.Schema.UseTest do
       assert ^binary_value = TestSchema.to_binary(%{foo: 12})
 
       assert {:ok, %{foo: 12}} == TestSchema.read(binary_value)
+      assert {:ok, %{"foo" => 12}} == SafeTestSchema.read(binary_value)
+      assert SafeTestSchema.schema().safe
     end
 
     test "it will pick out a value correctly" do
@@ -38,7 +47,7 @@ defmodule Flatbuffer.Schema.UseTest do
         "0E00000000000000060008000400060000000C000000"
         |> Base.decode16!()
 
-      assert 12 = TestSchema.get(binary_value, :foo)
+      assert 12 = TestSchema.get(binary_value, "foo")
     end
   end
 end

@@ -3,6 +3,53 @@ defmodule Flatbuffer.Schema.TableTest do
   alias Flatbuffer.Schema
 
   describe "Schema.from_string/1" do
+    test "keeps one canonical field tuple and a binary name-to-id index" do
+      field_name = "field_#{System.unique_integer([:positive])}"
+
+      assert_raise ArgumentError, fn -> String.to_existing_atom(field_name) end
+
+      schema = """
+      table Table {
+        #{field_name}: int;
+      }
+
+      root_type Table;
+      """
+
+      assert {:ok,
+              %Schema{
+                entities: %{
+                  "Table" =>
+                    {:table,
+                     %{
+                       fields: {{^field_name, {:int, %{default: 0}}}},
+                       field_ids: %{^field_name => 0}
+                     }}
+                }
+              }} = Schema.from_string(schema, safe: true)
+
+      assert_raise ArgumentError, fn -> String.to_existing_atom(field_name) end
+    end
+
+    test "pre-resolves approved output atoms in the default mode" do
+      field_name = "field_#{System.unique_integer([:positive])}"
+
+      schema = "table Table { #{field_name}: int; } root_type Table;"
+
+      assert {:ok,
+              %Schema{
+                entities: %{
+                  "Table" =>
+                    {:table,
+                     %{fields: {{field_atom, {:int, %{default: 0}}}}, field_ids: field_ids}}
+                },
+                safe: false
+              }} = Schema.from_string(schema)
+
+      assert field_atom == String.to_existing_atom(field_name)
+      assert field_ids == %{field_name => 0}
+    end
+
     test "with a single table it will return the correct result" do
       schema = """
       table Table {
@@ -13,7 +60,7 @@ defmodule Flatbuffer.Schema.TableTest do
 
       assert {:ok,
               %Schema{
-                entities: %{"Table" => {:table, %{fields: [], indices: %{}}}},
+                entities: %{"Table" => {:table, %{fields: {}, field_ids: %{}}}},
                 root_type: {:table, %{name: "Table"}},
                 id: nil
               }} == Schema.from_string(schema)
@@ -38,11 +85,11 @@ defmodule Flatbuffer.Schema.TableTest do
                    "Table" => {
                      :table,
                      %{
-                       fields: [{:nested_table, {:table, %{name: "NestedTable"}}}],
-                       indices: %{nested_table: {0, {:table, %{name: "NestedTable"}}}}
+                       fields: {{:nested_table, {:table, %{name: "NestedTable"}}}},
+                       field_ids: %{"nested_table" => 0}
                      }
                    },
-                   "NestedTable" => {:table, %{fields: [], indices: %{}}}
+                   "NestedTable" => {:table, %{fields: {}, field_ids: %{}}}
                  },
                  id: nil,
                  root_type: {:table, %{name: "Table"}}
@@ -103,15 +150,14 @@ defmodule Flatbuffer.Schema.TableTest do
       root_type Table;
       """
 
-      assert {
-               :ok,
-               %Schema{
-                 entities: %{
-                   "NestedTable" => {:table, %{fields: [], indices: %{}}},
-                   "Table" => {
-                     :table,
+      assert {:ok,
+              %Schema{
+                entities: %{
+                  "NestedTable" => {:table, %{fields: {}, field_ids: %{}}},
+                  "Table" =>
+                    {:table,
                      %{
-                       fields: [
+                       fields: {
                          {:byte, {:byte, %{default: 0}}},
                          {:ubyte, {:ubyte, %{default: 0}}},
                          {:short, {:short, %{default: 0}}},
@@ -140,52 +186,57 @@ defmodule Flatbuffer.Schema.TableTest do
                          {:vector_of_byte_enum, {:vector, {:enum, %{name: "ByteEnum"}}}},
                          {:struct, {:struct, %{name: "Struct"}}},
                          {:vector_of_struct, {:vector, {:struct, %{name: "Struct"}}}}
-                       ],
-                       indices: %{
-                         nested_table: {10, {:table, %{name: "NestedTable"}}},
-                         byte: {0, {:byte, %{default: 0}}},
-                         double: {9, {:double, %{default: 0}}},
-                         enum: {11, {:enum, %{name: "ByteEnum"}}},
-                         float: {8, {:float, %{default: 0}}},
-                         int: {4, {:int, %{default: 0}}},
-                         long: {6, {:long, %{default: 0}}},
-                         short: {2, {:short, %{default: 0}}},
-                         string: {12, {:string, %{}}},
-                         ubyte: {1, {:ubyte, %{default: 0}}},
-                         uint: {5, {:uint, %{default: 0}}},
-                         ulong: {7, {:ulong, %{default: 0}}},
-                         ushort: {3, {:ushort, %{default: 0}}},
-                         vector_of_byte: {13, {:vector, {:byte, %{default: 0}}}},
-                         vector_of_double: {22, {:vector, {:double, %{default: 0}}}},
-                         vector_of_float: {21, {:vector, {:float, %{default: 0}}}},
-                         vector_of_int: {17, {:vector, {:int, %{default: 0}}}},
-                         vector_of_long: {19, {:vector, {:long, %{default: 0}}}},
-                         vector_of_nested_table:
-                           {24, {:vector, {:table, %{name: "NestedTable"}}}},
-                         vector_of_short: {15, {:vector, {:short, %{default: 0}}}},
-                         vector_of_string: {23, {:vector, {:string, %{}}}},
-                         vector_of_ubyte: {14, {:vector, {:ubyte, %{default: 0}}}},
-                         vector_of_uint: {18, {:vector, {:uint, %{default: 0}}}},
-                         vector_of_ulong: {20, {:vector, {:ulong, %{default: 0}}}},
-                         vector_of_ushort: {16, {:vector, {:ushort, %{default: 0}}}},
-                         vector_of_byte_enum: {25, {:vector, {:enum, %{name: "ByteEnum"}}}},
-                         struct: {26, {:struct, %{name: "Struct"}}},
-                         vector_of_struct: {27, {:vector, {:struct, %{name: "Struct"}}}}
+                       },
+                       field_ids: %{
+                         "byte" => 0,
+                         "ubyte" => 1,
+                         "short" => 2,
+                         "ushort" => 3,
+                         "int" => 4,
+                         "uint" => 5,
+                         "long" => 6,
+                         "ulong" => 7,
+                         "float" => 8,
+                         "double" => 9,
+                         "nested_table" => 10,
+                         "enum" => 11,
+                         "string" => 12,
+                         "vector_of_byte" => 13,
+                         "vector_of_ubyte" => 14,
+                         "vector_of_short" => 15,
+                         "vector_of_ushort" => 16,
+                         "vector_of_int" => 17,
+                         "vector_of_uint" => 18,
+                         "vector_of_long" => 19,
+                         "vector_of_ulong" => 20,
+                         "vector_of_float" => 21,
+                         "vector_of_double" => 22,
+                         "vector_of_string" => 23,
+                         "vector_of_nested_table" => 24,
+                         "vector_of_byte_enum" => 25,
+                         "struct" => 26,
+                         "vector_of_struct" => 27
                        }
-                     }
-                   },
-                   "Struct" => {:struct, %{members: [field1: :byte, field2: :short]}},
-                   "ByteEnum" =>
-                     {:enum,
-                      %{
-                        type: {:byte, %{default: 0}},
-                        members: %{0 => :A, 1 => :B, 2 => :C, :B => 1, :C => 2, :A => 0}
-                      }}
-                 },
-                 id: nil,
-                 root_type: {:table, %{name: "Table"}}
-               }
-             } == Schema.from_string(schema)
+                     }},
+                  "Struct" => {:struct, %{members: [field1: :byte, field2: :short]}},
+                  "ByteEnum" =>
+                    {:enum,
+                     %{
+                       type: {:byte, %{default: 0}},
+                       members: %{
+                         0 => :A,
+                         1 => :B,
+                         2 => :C,
+                         "A" => 0,
+                         "B" => 1,
+                         "C" => 2
+                       }
+                     }}
+                },
+                id: nil,
+                root_type: {:table, %{name: "Table"}},
+                safe: false
+              }} == Schema.from_string(schema)
     end
   end
 end

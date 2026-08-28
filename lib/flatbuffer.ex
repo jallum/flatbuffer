@@ -31,8 +31,13 @@ defmodule Flatbuffer do
   alias Flatbuffer.Schema
   alias Flatbuffer.Writer
 
+  @type field_key :: String.t() | atom()
+  @type path :: field_key() | [field_key() | non_neg_integer()]
+
   @doc """
-  Reads a Flatbuffer into a map using the given schema.
+  Reads a Flatbuffer into a map using the given schema. Field, struct, and enum
+  names are atoms by default, or binaries when the schema was built with
+  `safe: true`.
   Returns {:ok, map} or {:error, reason}.
   """
   @spec read(buffer :: iodata(), Schema.t()) ::
@@ -61,6 +66,8 @@ defmodule Flatbuffer do
   @doc """
   Gets the value for a specific key without decoding the entire buffer.
 
+  Both atom and binary field names are accepted. Lookup never creates atoms.
+
   If the key (or path) is present in the buffer then its value value is
   returned. Otherwise, `default` is returned.
 
@@ -70,7 +77,7 @@ defmodule Flatbuffer do
   """
   @spec get(
           buffer :: iodata(),
-          atom() | [atom() | integer()],
+          path(),
           Schema.t(),
           nil | default
         ) :: default
@@ -92,7 +99,7 @@ defmodule Flatbuffer do
   of `{:ok, value}`. If the value cannot be found, `:error` is returned. If the
   buffer does not pass the id-check, `{:error, {:id_mismatch, {buffer_id, schema_id}}}`
   """
-  @spec fetch(buffer :: iodata(), [atom() | integer()], Schema.t()) :: any()
+  @spec fetch(buffer :: iodata(), path(), Schema.t()) :: any()
   def fetch(buffer, path, schema) do
     case get(buffer, path, schema) do
       nil -> :error
@@ -107,7 +114,7 @@ defmodule Flatbuffer do
   If the buffer contains the key/path, the corresponding value is returned. If
   buffer doesn't contain it, a `KeyError` exception is raised.
   """
-  @spec fetch!(buffer :: iodata(), [atom() | integer()], Schema.t()) :: any()
+  @spec fetch!(buffer :: iodata(), path(), Schema.t()) :: any()
   def fetch!(buffer, path, schema) do
     case get(buffer, path, schema) do
       nil -> raise KeyError, term: buffer, key: path
@@ -116,7 +123,8 @@ defmodule Flatbuffer do
   end
 
   @doc """
-  Serializes a map into a Flatbuffer iolist using the schema.
+  Serializes a map into a Flatbuffer iolist using the schema. Both atom and
+  binary field names are accepted.
   """
   @spec to_iolist(map(), Schema.t()) :: iolist()
   def to_iolist(%{} = map, %Schema{} = schema) do
@@ -148,6 +156,7 @@ defmodule Flatbuffer do
   Options:
     * :file - Required schema file path.
     * :path - Base path for schema includes.
+    * :safe - Decode schema-defined names as binaries instead of atoms. Defaults to `false`.
   """
   defmacro __using__(opts) do
     resolver =
@@ -158,7 +167,8 @@ defmodule Flatbuffer do
 
     file = Keyword.get(opts, :file) || raise "Missing :file option"
 
-    with {:ok, schema} <- Schema.from_file(file, resolver: resolver) do
+    with {:ok, schema} <-
+           Schema.from_file(file, resolver: resolver, safe: Keyword.get(opts, :safe, false)) do
       quote do
         def schema, do: unquote(Macro.escape(schema))
         def read(buffer), do: Flatbuffer.read(buffer, schema())

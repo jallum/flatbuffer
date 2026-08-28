@@ -8,7 +8,6 @@ defmodule Flatbuffer.Schema.StructTest do
       expected_field_name2 = RandomIdentifier.generate()
       expected_field_name3 = RandomIdentifier.generate()
       expected_field_name4 = RandomIdentifier.generate()
-
       expected_field_atom1 = String.to_atom(expected_field_name1)
       expected_field_atom2 = String.to_atom(expected_field_name2)
       expected_field_atom3 = String.to_atom(expected_field_name3)
@@ -52,10 +51,8 @@ defmodule Flatbuffer.Schema.StructTest do
                   ^expected_table_name =>
                     {:table,
                      %{
-                       fields: [{^struct_field_atom, {:struct, %{name: ^expected_struct_name}}}],
-                       indices: %{
-                         ^struct_field_atom => {0, {:struct, %{name: ^expected_struct_name}}}
-                       }
+                       fields: {{^struct_field_atom, {:struct, %{name: ^expected_struct_name}}}},
+                       field_ids: %{^struct_field_name => 0}
                      }}
                 },
                 root_type: {:table, %{name: ^expected_table_name}},

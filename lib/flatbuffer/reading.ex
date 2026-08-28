@@ -43,7 +43,7 @@ defmodule Flatbuffer.Reading do
 
     case Map.get(members, index) do
       nil -> throw({:error, {:not_in_enum, index, members}})
-      value_atom -> value_atom
+      value -> value
     end
   end
 
@@ -67,7 +67,7 @@ defmodule Flatbuffer.Reading do
     vtable = Cursor.rjump_i32(table)
     count = div(Cursor.get_i16(vtable) - 4, 2)
 
-    read_table(%{}, count, fields, Cursor.skip(vtable, 4), table, schema)
+    read_table(%{}, count, Tuple.to_list(fields), Cursor.skip(vtable, 4), table, schema)
   end
 
   def read(type, _, _), do: throw({:error, {:unknown_type, type}})
@@ -96,31 +96,50 @@ defmodule Flatbuffer.Reading do
   defp read_table(
          row,
          count,
-         [{name, {:union, %{name: union_name}}} | fields],
+         [{name, {:union_type, union_name}} | fields],
          vtable,
          table,
          schema
        ) do
     data_offset = Cursor.get_i16(vtable)
-    index = Cursor.skip(table, data_offset) |> Cursor.get_u8()
+    index = if data_offset == 0, do: 0, else: Cursor.skip(table, data_offset) |> Cursor.get_u8()
 
-    {fields, row} =
-      if index == 0 do
-        # index is null, so field is not set carry on
-        {fields, row}
-      else
-        # we have a table set so we get the type and expect it as the next
-        # record in the vtable
+    row =
+      if index > 0 do
         {:union, %{members: members}} = Map.get(schema.entities, union_name)
 
         case Map.get(members, index - 1) do
-          nil ->
-            {fields, row}
-
-          table_name ->
-            type_key = :"#{name}_type"
-            {[{name, {:table, %{name: table_name}}} | fields], Map.put(row, type_key, table_name)}
+          nil -> row
+          table_name -> Map.put(row, name, table_name)
         end
+      else
+        row
+      end
+
+    read_table(row, count - 1, fields, Cursor.skip(vtable, 2), table, schema)
+  end
+
+  defp read_table(
+         row,
+         count,
+         [{name, {:union, %{type_key: type_key}}} | fields],
+         vtable,
+         table,
+         schema
+       ) do
+    data_offset = Cursor.get_i16(vtable)
+
+    row =
+      case {data_offset, Map.get(row, type_key)} do
+        {0, _} ->
+          row
+
+        {_, nil} ->
+          row
+
+        {_, table_name} ->
+          value = read({:table, %{name: table_name}}, Cursor.skip(table, data_offset), schema)
+          Map.put(row, name, value)
       end
 
     read_table(row, count - 1, fields, Cursor.skip(vtable, 2), table, schema)

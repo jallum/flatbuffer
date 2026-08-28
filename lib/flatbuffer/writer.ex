@@ -71,7 +71,7 @@ defmodule Flatbuffer.Writer do
 
     members
     |> Enum.map(fn {field_name, field_type} ->
-      value = Map.get(map, field_name)
+      value = get_field(map, field_name)
       write({field_type, %{}}, value, [struct_name, field_name], schema)
     end)
   end
@@ -103,12 +103,13 @@ defmodule Flatbuffer.Writer do
   end
 
   def write({:enum, %{name: enum_name} = options}, value, path, schema)
-      when is_atom(value) do
+      when is_atom(value) or is_binary(value) do
     {:enum, %{members: members, type: {type, type_options}}} = Map.get(schema.entities, enum_name)
 
     # if we got handed some defaults from outside,
     # we put them in here
     type_options = Map.merge(type_options, options)
+    value = if is_atom(value), do: Atom.to_string(value), else: value
     index = Map.get(members, value)
 
     case index do
@@ -124,33 +125,38 @@ defmodule Flatbuffer.Writer do
 
     {names_types, values} =
       Enum.reduce(
-        Enum.reverse(fields),
+        fields |> Tuple.to_list() |> Enum.reverse(),
         {[], []},
         fn
-          {name, {:union, %{name: union_name}}}, {type_acc, value_acc} ->
+          {name, {:union_type, union_name}}, {type_acc, value_acc} ->
             {:union, %{members: members}} = Map.get(schema.entities, union_name)
-            type_key = :"#{name}_type"
 
-            case Map.get(map, type_key) do
+            case get_field(map, name) do
               nil ->
                 type_acc_new = [{{name}, {:byte, %{default: 0}}} | type_acc]
                 value_acc_new = [0 | value_acc]
                 {type_acc_new, value_acc_new}
 
               union_type ->
+                union_type = normalize_name(union_type)
                 union_index = Map.get(members, union_type)
 
-                type_acc_new = [
-                  {{name}, {:byte, %{default: 0}}}
-                  | [{name, {:table, %{name: union_type}}} | type_acc]
-                ]
-
-                value_acc_new = [union_index + 1 | [Map.get(map, name) | value_acc]]
-                {type_acc_new, value_acc_new}
+                {[{{name}, {:byte, %{default: 0}}} | type_acc], [union_index + 1 | value_acc]}
             end
 
+          {name, {:union, %{type_key: type_key}} = type}, {type_acc, value_acc} ->
+            union_type = map |> get_field(type_key) |> normalize_name()
+
+            field_type =
+              case union_type do
+                nil -> type
+                union_type -> {:table, %{name: union_type}}
+              end
+
+            {[{{name}, field_type} | type_acc], [get_field(map, name) | value_acc]}
+
           {name, type}, {type_acc, value_acc} ->
-            {[{{name}, type} | type_acc], [Map.get(map, name) | value_acc]}
+            {[{{name}, type} | type_acc], [get_field(map, name) | value_acc]}
         end
       )
 
@@ -304,6 +310,27 @@ defmodule Flatbuffer.Writer do
         )
     end
   end
+
+  defp get_field(map, name) do
+    case Map.fetch(map, name) do
+      {:ok, value} ->
+        value
+
+      :error when is_binary(name) ->
+        try do
+          Map.get(map, String.to_existing_atom(name))
+        rescue
+          ArgumentError -> nil
+        end
+
+      :error when is_atom(name) ->
+        Map.get(map, Atom.to_string(name))
+    end
+  end
+
+  defp normalize_name(nil), do: nil
+  defp normalize_name(name) when is_atom(name), do: Atom.to_string(name)
+  defp normalize_name(name), do: name
 
   def scalar?(:string), do: false
   def scalar?({:vector, _}), do: false
