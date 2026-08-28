@@ -40,14 +40,14 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
       - name: Install Elixir and Erlang
         uses: erlef/setup-beam@v1
         with:
           elixir-version: ${{ matrix.elixir }}
           otp-version: ${{ matrix.otp }}
       - name: Restore deps and _build cache
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: |
             deps
@@ -62,11 +62,10 @@ jobs:
       - name: Check unused dependencies
         run: mix deps.unlock --check-unused
         if: ${{ matrix.lint }}
-      - name: Compile lint
+      - name: Compile
         run: mix compile --warnings-as-errors
-        if: ${{ matrix.lint }}
       - name: Run tests
-        run: ${{ matrix.coverage && 'mix coveralls.github' || 'mix test' }}
+        run: ${{ matrix.coverage && 'mix coveralls.github --warnings-as-errors' || 'mix test --warnings-as-errors' }}
       - name: Install flatc integration dependencies
         if: ${{ matrix.lint }}
         run: sudo apt-get update && sudo apt-get install --yes flatbuffers-compiler libflatbuffers-dev g++
