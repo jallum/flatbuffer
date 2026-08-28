@@ -19,8 +19,10 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - elixir: "1.18.0"
-            otp: "27.1"
+          # Loose versions: resolve to the latest matching patch release.
+          # Old pins rot — OTP 27.1's ssl rejects hex.pm's current cert chain.
+          - elixir: "1.18"
+            otp: "27"
             lint: lint
 
     steps:
