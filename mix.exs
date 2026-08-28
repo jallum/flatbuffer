@@ -33,7 +33,6 @@ defmodule Eflatbuffers.MixProject do
   def cli do
     [
       preferred_envs: [
-        "test.watch": :test,
         coveralls: :test,
         "coveralls.github": :test,
         "coveralls.html": :test,
@@ -50,8 +49,7 @@ defmodule Eflatbuffers.MixProject do
       # excoveralls warns that CAStore.file_path/0 is undefined.
       {:castore, "~> 1.0", only: :test},
       {:excoveralls, "~> 0.18", only: :test},
-      {:ex_doc, "~> 0.40", only: :dev, runtime: false},
-      {:mix_test_watch, "~> 1.0", only: [:dev, :test], runtime: false}
+      {:ex_doc, "~> 0.40", only: :dev, runtime: false}
     ]
   end
 
