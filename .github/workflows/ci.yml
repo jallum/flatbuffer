@@ -32,7 +32,6 @@ jobs:
           - elixir: "1.20"
             otp: "29.0"
             lint: lint
-            lint: lint
 
     steps:
       - name: Checkout
