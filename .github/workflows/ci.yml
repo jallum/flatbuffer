@@ -15,6 +15,7 @@ jobs:
     env:
       FORCE_COLOR: 1
       MIX_ENV: test
+      GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
     strategy:
       fail-fast: false
       matrix:
@@ -29,9 +30,13 @@ jobs:
             otp: "28.3"
           # Newest toolchain; the lint cell runs the version-independent
           # checks once.
+          # Exactly one cell reports coverage: coveralls closes a PR's
+          # build on the first non-parallel upload, so a second reporting
+          # cell would 422 whenever finish times diverge.
           - elixir: "1.20"
             otp: "29.0"
             lint: lint
+            coverage: true
 
     steps:
       - name: Checkout
@@ -61,7 +66,7 @@ jobs:
         run: mix compile --warnings-as-errors
         if: ${{ matrix.lint }}
       - name: Run tests
-        run: mix test
+        run: ${{ matrix.coverage && 'mix coveralls.github' || 'mix test' }}
       - name: Install flatc integration dependencies
         if: ${{ matrix.lint }}
         run: sudo apt-get update && sudo apt-get install --yes flatbuffers-compiler libflatbuffers-dev g++

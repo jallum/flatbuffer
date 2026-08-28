@@ -10,6 +10,7 @@ defmodule Eflatbuffers.MixProject do
       start_permanent: Mix.env() == :prod,
       deps: deps(),
       compilers: [:yecc, :leex] ++ Mix.compilers(),
+      test_coverage: [tool: ExCoveralls],
       elixirc_paths: elixirc_paths(Mix.env()),
       package: [
         # Ship the leex/yecc grammars, not the .erl generated from them —
@@ -30,14 +31,23 @@ defmodule Eflatbuffers.MixProject do
   end
 
   def cli do
-    [preferred_envs: ["test.watch": :test]]
+    [
+      preferred_envs: [
+        "test.watch": :test,
+        coveralls: :test,
+        "coveralls.github": :test,
+        "coveralls.html": :test,
+        "coveralls.json": :test
+      ]
+    ]
   end
 
   defp deps do
     [
-      {:iodata, "~> 0.5"},
-      {:benchee, "~> 1.4", only: :dev},
-      {:ex_doc, "~> 0.34", only: :dev, runtime: false},
+      {:iodata, "~> 0.7"},
+      {:benchee, "~> 1.5", only: :dev},
+      {:excoveralls, "~> 0.18", only: :test},
+      {:ex_doc, "~> 0.40", only: :dev, runtime: false},
       {:mix_test_watch, "~> 1.0", only: [:dev, :test], runtime: false}
     ]
   end
