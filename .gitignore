@@ -21,3 +21,6 @@ flatbuffer-*.tar
 
 # Temporary files, for example, from tests.
 /tmp/
+
+# Local Claude Code configuration and skills; personal, not shared.
+/.claude/
