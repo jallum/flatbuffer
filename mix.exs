@@ -12,6 +12,10 @@ defmodule Eflatbuffers.MixProject do
       compilers: [:yecc, :leex] ++ Mix.compilers(),
       elixirc_paths: elixirc_paths(Mix.env()),
       package: [
+        # Ship the leex/yecc grammars, not the .erl generated from them —
+        # consumers regenerate via the :yecc/:leex compilers, and a prebuilt
+        # .erl can be stale relative to the grammar in the same tarball.
+        files: ~w(lib src/*.xrl src/*.yrl mix.exs README.md LICENSE.txt),
         source_url: "https://github.com/jallum/flatbuffer",
         licenses: ["MIT"],
         links: %{
