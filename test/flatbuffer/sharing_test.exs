@@ -234,14 +234,14 @@ defmodule Flatbuffer.SharingTest do
   end
 
   defp vtable_displacement(buffer, table) do
-    <<_::binary-size(table), offset::signed-little-32, _::binary>> = buffer
+    <<_::binary-size(^table), offset::signed-little-32, _::binary>> = buffer
     offset
   end
 
   defp vtable_identity(buffer, table) do
     vtable = vtable_target(buffer, table)
 
-    <<_::binary-size(vtable), vtable_size::unsigned-little-16, object_size::unsigned-little-16,
+    <<_::binary-size(^vtable), vtable_size::unsigned-little-16, object_size::unsigned-little-16,
       rest::binary>> = buffer
 
     {object_size, binary_part(rest, 0, vtable_size - 4)}
@@ -250,18 +250,18 @@ defmodule Flatbuffer.SharingTest do
   defp table_field(buffer, table, field_id) do
     vtable = vtable_target(buffer, table)
     entry = vtable + 4 + field_id * 2
-    <<_::binary-size(entry), offset::unsigned-little-16, _::binary>> = buffer
+    <<_::binary-size(^entry), offset::unsigned-little-16, _::binary>> = buffer
     table + offset
   end
 
   defp reference_target(buffer, reference) do
-    <<_::binary-size(reference), offset::unsigned-little-32, _::binary>> = buffer
+    <<_::binary-size(^reference), offset::unsigned-little-32, _::binary>> = buffer
     reference + offset
   end
 
   defp table_vector_targets(buffer, table, field_id) do
     vector = buffer |> table_field(table, field_id) |> then(&reference_target(buffer, &1))
-    <<_::binary-size(vector), count::unsigned-little-32, _::binary>> = buffer
+    <<_::binary-size(^vector), count::unsigned-little-32, _::binary>> = buffer
 
     for index <- 0..(count - 1) do
       reference = vector + 4 + index * 4

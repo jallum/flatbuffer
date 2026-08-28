@@ -202,12 +202,12 @@ defmodule Flatbuffer.FlatbufferTest do
 
   defp replace_table_field(buffer, field_id, value) do
     <<table_offset::unsigned-little-32, _::binary>> = buffer
-    <<_::binary-size(table_offset), vtable_offset::signed-little-32, _::binary>> = buffer
+    <<_::binary-size(^table_offset), vtable_offset::signed-little-32, _::binary>> = buffer
     vtable_start = table_offset - vtable_offset
     field_entry = vtable_start + 4 + field_id * 2
-    <<_::binary-size(field_entry), field_offset::unsigned-little-16, _::binary>> = buffer
+    <<_::binary-size(^field_entry), field_offset::unsigned-little-16, _::binary>> = buffer
     value_offset = table_offset + field_offset
-    <<prefix::binary-size(value_offset), _old_value, suffix::binary>> = buffer
+    <<prefix::binary-size(^value_offset), _old_value, suffix::binary>> = buffer
     prefix <> <<value>> <> suffix
   end
 
