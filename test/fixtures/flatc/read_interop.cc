@@ -5,6 +5,7 @@
 #include <string>
 #include <vector>
 
+#include "flatbuffers/flatbuffers.h"
 #include "interop_generated.h"
 
 namespace {
@@ -23,6 +24,8 @@ int main(int argc, char **argv) {
       std::istreambuf_iterator<char>(input),
       std::istreambuf_iterator<char>()};
 
+  flatbuffers::Verifier verifier(buffer.data(), buffer.size());
+  if (!VerifyRootBuffer(verifier)) return 3;
   if (!RootBufferHasIdentifier(buffer.data())) return 4;
 
   const Root *root = GetRoot(buffer.data());
