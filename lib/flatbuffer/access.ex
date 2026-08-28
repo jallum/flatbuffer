@@ -97,12 +97,17 @@ defmodule Flatbuffer.Access do
   end
 
   defp data_pointer(cursor, index) do
-    table = Cursor.jump_i32(cursor)
+    table = Cursor.jump_u32(cursor)
     vtable = Cursor.rjump_i32(table)
+    entry_offset = 4 + index * 2
 
-    case Cursor.skip(vtable, 4 + index * 2) |> Cursor.get_i16() do
-      0 -> nil
-      data_offset -> Cursor.skip(table, data_offset)
+    if entry_offset >= Cursor.get_u16(vtable) do
+      nil
+    else
+      case Cursor.skip(vtable, entry_offset) |> Cursor.get_u16() do
+        0 -> nil
+        data_offset -> Cursor.skip(table, data_offset)
+      end
     end
   end
 

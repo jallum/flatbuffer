@@ -3,6 +3,24 @@ defmodule Flatbuffer.Schema.TableTest do
   alias Flatbuffer.Schema
 
   describe "Schema.from_string/1" do
+    test "retains the shared attribute on string fields" do
+      schema = "table Table { pooled: string (shared); plain: string; } root_type Table;"
+
+      assert {:ok,
+              %Schema{
+                entities: %{
+                  "Table" =>
+                    {:table,
+                     %{
+                       fields: {
+                         {:pooled, {:string, %{shared: true}}},
+                         {:plain, {:string, %{}}}
+                       }
+                     }}
+                }
+              }} = Schema.from_string(schema)
+    end
+
     test "keeps one canonical field tuple and a binary name-to-id index" do
       field_name = "field_#{System.unique_integer([:positive])}"
 

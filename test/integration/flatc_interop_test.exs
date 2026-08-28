@@ -61,7 +61,7 @@ defmodule Flatbuffer.FlatcInteropTest do
     assert @expected == Flatbuffer.read!(buffer, schema)
   end
 
-  test "generated C++ reads a buffer encoded by Flatbuffer", %{
+  test "generated C++ verifies and reads a buffer encoded by Flatbuffer", %{
     checker: checker,
     directory: directory
   } do

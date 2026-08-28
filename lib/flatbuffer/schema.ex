@@ -10,6 +10,7 @@ defmodule Flatbuffer.Schema do
   - Vectors and references
   - Schema includes and namespaces
   - File identifiers
+  - Shared string fields
 
   Table fields are stored once in a tuple indexed by their FlatBuffer field ID.
   Each table also has a `field_ids` map from binary field name to ID for direct
@@ -54,7 +55,11 @@ defmodule Flatbuffer.Schema do
           | {:ulong, %{default: integer()}}
           | {:float, %{default: float()}}
           | {:double, %{default: float()}}
-          | {:string, %{default: String.t()}}
+          | {:string,
+             %{
+               optional(:default) => String.t(),
+               optional(:shared) => boolean()
+             }}
 
   @type type_def ::
           table_def()
@@ -272,6 +277,9 @@ defmodule Flatbuffer.Schema do
   defp apply_namespace({:vector, type}, namespace),
     do: {:vector, apply_namespace(type, namespace)}
 
+  defp apply_namespace({:attributes, type, attributes}, namespace),
+    do: {:attributes, apply_namespace(type, namespace), attributes}
+
   defp apply_namespace({:union, types}, namespace),
     do: {:union, types |> Enum.map(&apply_namespace(&1, namespace))}
 
@@ -346,7 +354,7 @@ defmodule Flatbuffer.Schema do
       fields
       |> Enum.reduce({0, [], %{}}, fn
         {name, type}, {id, fields, field_ids} ->
-          resolved_type = type |> resolve_type(entities) |> resolve_output_default(safe)
+          resolved_type = type |> resolve_field_type(entities) |> resolve_output_default(safe)
 
           {updated_fields, updated_field_ids} =
             case resolved_type do
@@ -381,6 +389,19 @@ defmodule Flatbuffer.Schema do
 
   defp next_id(id, {:union, _}), do: id + 2
   defp next_id(id, _), do: id + 1
+
+  defp resolve_field_type({:attributes, type, attributes}, entities) do
+    type
+    |> resolve_type(entities)
+    |> apply_field_attributes(attributes)
+  end
+
+  defp resolve_field_type(type, entities), do: resolve_type(type, entities)
+
+  defp apply_field_attributes({:string, options}, %{"shared" => true}),
+    do: {:string, Map.put(options, :shared, true)}
+
+  defp apply_field_attributes(type, _attributes), do: type
 
   defp resolve_type({:vector, type}, entities),
     do: {:vector, resolve_type(type, entities)}

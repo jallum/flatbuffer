@@ -167,7 +167,9 @@ Flatbuffer. CI runs them on the newest supported Elixir/OTP combination.
 * tables
 * scalars
 * strings
-* vflatbufferrs
+* vtables
+* shared strings (`shared` field attribute)
+* shared vtables
 * structs
 * unions
 * enums
@@ -177,9 +179,7 @@ Flatbuffer. CI runs them on the newest supported Elixir/OTP combination.
 * validate file identifiers
 * includes
 
-### features only in flatcs
+### features only in flatc
 
-* shared strings
-* shared vtables
 * alignment
-* additional attributes
+* additional attributes other than `shared`
