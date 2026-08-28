@@ -1,0 +1,31 @@
+file_identifier "EFBI";
+
+enum Mood : byte {
+  UNKNOWN,
+  HAPPY,
+  CURIOUS
+}
+
+struct Position {
+  x: float;
+  y: float;
+  z: float;
+}
+
+table Child {
+  id: int;
+  label: string;
+}
+
+table Root {
+  active: bool;
+  count: uint;
+  score: double;
+  mood: Mood;
+  position: Position;
+  name: string;
+  values: [int];
+  child: Child;
+}
+
+root_type Root;

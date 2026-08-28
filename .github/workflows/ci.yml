@@ -62,3 +62,9 @@ jobs:
         if: ${{ matrix.lint }}
       - name: Run tests
         run: mix test
+      - name: Install flatc integration dependencies
+        if: ${{ matrix.lint }}
+        run: sudo apt-get update && sudo apt-get install --yes flatbuffers-compiler libflatbuffers-dev g++
+      - name: Run flatc integration tests
+        if: ${{ matrix.lint }}
+        run: mix test --only flatc

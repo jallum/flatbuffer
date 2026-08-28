@@ -146,6 +146,19 @@ iex(4)> ColorScheme.get(color_scheme_fb, [:background, :green])
 100
 ```
 
+## Interoperability tests
+
+The bidirectional integration tests require `flatc`, the FlatBuffers C++
+headers, and a C++17 compiler. Run them separately from the unit suite:
+
+```console
+mix test --only flatc
+```
+
+They verify that Flatbuffer decodes a binary produced by `flatc` and that
+flatc-generated C++ accessors read every field in a binary produced by
+Flatbuffer. CI runs them on the newest supported Elixir/OTP combination.
+
 
 ## Comparing Flatbuffer to flatc
 

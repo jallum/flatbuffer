@@ -1,0 +1,17 @@
+{
+  active: true,
+  count: 4000000000,
+  score: 1.25,
+  mood: "CURIOUS",
+  position: {
+    x: 1.5,
+    y: -2.25,
+    z: 3.75
+  },
+  name: "interoperable",
+  values: [-2, 0, 3],
+  child: {
+    id: 7,
+    label: "nested"
+  }
+}
