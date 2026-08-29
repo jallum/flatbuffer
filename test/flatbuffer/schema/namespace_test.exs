@@ -27,6 +27,45 @@ defmodule Flatbuffer.Schema.NamespaceTest do
     end
   end
 
+  test "applies the namespace to enum, struct, vector, union, and attributed field types" do
+    schema_str = """
+    namespace foo;
+
+    enum Mood : byte { HAPPY, SAD }
+    struct Point { x: int; y: int; }
+    union Either { A, B }
+    table A { x: int; }
+    table B { y: string; }
+
+    table Root {
+      mood: Mood = SAD;
+      point: Point;
+      moods: [Mood];
+      either: Either;
+      name: string (shared);
+    }
+
+    root_type Root;
+    """
+
+    assert {:ok, schema} = Schema.from_string(schema_str)
+    assert {:table, _} = schema.entities["foo.Root"]
+    assert {:enum, _} = schema.entities["foo.Mood"]
+    assert {:struct, _} = schema.entities["foo.Point"]
+    assert {:union, %{members: %{0 => "foo.A"}}} = schema.entities["foo.Either"]
+
+    map = %{
+      mood: :HAPPY,
+      point: %{x: 1, y: 2},
+      moods: [:SAD, :HAPPY],
+      either_type: "foo.A",
+      either: %{x: 5},
+      name: "n"
+    }
+
+    assert map == map |> Flatbuffer.to_binary(schema) |> Flatbuffer.read!(schema)
+  end
+
   test "with an implied namespace, it will return the correct result" do
     expected_table_name = RandomIdentifier.generate()
     expected_full_table_name = "foo.bar.#{expected_table_name}"

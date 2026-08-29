@@ -23,5 +23,30 @@ defmodule Flatbuffer.SchemaTest do
 
       assert {:error, {:root_type_is_not_a_table, "Struct"}} == Schema.from_string(schema)
     end
+
+    test "when a field references an undefined type, returns the correct error" do
+      schema = """
+      table Root {
+        x: Missing;
+      }
+
+      root_type Root;
+      """
+
+      assert {:error, {:type_not_found, "Missing"}} == Schema.from_string(schema)
+    end
+
+    test "ignores field attributes it does not recognize" do
+      schema = """
+      table Root {
+        x: int (deprecated);
+      }
+
+      root_type Root;
+      """
+
+      assert {:ok, schema} = Schema.from_string(schema)
+      assert %{x: 7} == %{x: 7} |> Flatbuffer.to_binary(schema) |> Flatbuffer.read!(schema)
+    end
   end
 end

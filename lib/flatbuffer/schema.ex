@@ -131,8 +131,10 @@ defmodule Flatbuffer.Schema do
          true <- is_function(resolver_fn, 1) || {:error, {:no_resolver, file_name}},
          {:ok, file_contents} <- resolver_fn.(file_name),
          {:ok, {entities, directives}} <- chain_load(file_name, file_contents, resolver_fn),
+         {:ok, root_type} <-
+           determine_root_type(entities, directives[:root_type_name], directives[:namespace]),
          {:ok, entities} <- resolve_types(entities, Keyword.get(opts, :safe, false)) do
-      {:ok, new(entities, directives, opts)}
+      {:ok, new(entities, root_type, directives, opts)}
     end
   end
 
@@ -167,15 +169,17 @@ defmodule Flatbuffer.Schema do
           {:ok, t()} | from_errors()
   def from_string(string, opts \\ []) do
     with {:ok, {entities, directives}} <- chain_load(:string, string, opts[:resolver]),
+         {:ok, root_type} <-
+           determine_root_type(entities, directives[:root_type_name], directives[:namespace]),
          {:ok, entities} <- resolve_types(entities, Keyword.get(opts, :safe, false)) do
-      {:ok, new(entities, directives, opts)}
+      {:ok, new(entities, root_type, directives, opts)}
     end
   end
 
-  defp new(entities, directives, opts) do
+  defp new(entities, root_type, directives, opts) do
     %__MODULE__{
       entities: entities,
-      root_type: directives[:root_type],
+      root_type: root_type,
       id: directives[:file_identifier],
       safe: Keyword.get(opts, :safe, false)
     }
@@ -188,8 +192,7 @@ defmodule Flatbuffer.Schema do
          file_id <- directives[:file_identifier],
          namespace <- directives[:namespace],
          root_type_name <- directives[:root_type],
-         entities <- apply_namespace(entities, namespace),
-         {:ok, root_type} <- determine_root_type(entities, root_type_name, namespace) do
+         entities <- apply_namespace(entities, namespace) do
       directives
       |> find_include_files()
       |> Enum.reduce_while(%{}, fn
@@ -218,7 +221,7 @@ defmodule Flatbuffer.Schema do
         included_entities ->
           {:ok,
            {Map.merge(included_entities, entities),
-            [root_type: root_type, file_identifier: file_id]}}
+            [root_type_name: root_type_name, namespace: namespace, file_identifier: file_id]}}
       end
     end
   end
