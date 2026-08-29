@@ -1,5 +1,17 @@
 # Changelog
 
+## 0.5.2 — 2026-08-28
+
+- **Schema includes no longer require a `root_type` in every file.** Previously each included `.fbs` file had to declare its own `root_type` or the whole load failed with `:root_type_is_undefined`, which made real-world, flatc-style type-only include files unusable. The root type is now resolved once, after all includes are merged, which also means the top-level `root_type` can reference a type defined in an included file:
+
+  ```elixir
+  # root.fbs:   include "types.fbs";  root_type Message;
+  # types.fbs:  table Message { text: string; }
+  {:ok, schema} = Flatbuffer.Schema.from_file("root.fbs", resolver: &File.read/1)
+  ```
+
+  A schema with no `root_type` anywhere still returns `{:error, :root_type_is_undefined}`.
+
 ## 0.5.1 — 2026-08-28
 
 - **`Flatbuffer.read!/2` now raises on error instead of throwing.** Its documentation always promised a raise, but on a failed read (e.g. a buffer whose file identifier doesn't match the schema's) it threw an `{:error, reason}` tuple, which escaped `try/rescue` and could only be caught with `catch`. It now raises `Flatbuffer.BadFlatbufferError` with the reason in the message. If you were relying on `catch` to trap these, switch to `rescue`:
