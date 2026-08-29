@@ -1,5 +1,20 @@
 # Changelog
 
+## 0.5.1 — 2026-08-28
+
+- **`Flatbuffer.read!/2` now raises on error instead of throwing.** Its documentation always promised a raise, but on a failed read (e.g. a buffer whose file identifier doesn't match the schema's) it threw an `{:error, reason}` tuple, which escaped `try/rescue` and could only be caught with `catch`. It now raises `Flatbuffer.BadFlatbufferError` with the reason in the message. If you were relying on `catch` to trap these, switch to `rescue`:
+
+  ```elixir
+  try do
+    Flatbuffer.read!(buffer, schema)
+  rescue
+    e in Flatbuffer.BadFlatbufferError -> handle_bad_buffer(e.message)
+  end
+  ```
+
+- Removed unused internal functions from `Flatbuffer.Utils` and `Flatbuffer.Cursor` (`scalar?/1`, `extract_scalar_type/2`, `jump_i32/1`, `get_bytes/3`). These were never part of the documented API.
+- Expanded the test suite (coverage 93% → 98%): scalar round-trips for every type, buffer id checks, union and vtable edge cases, vector path access, and writer type-error paths.
+
 ## 0.5.0 — 2026-08-28
 
 - **New `safe: true` option for schema loading.** Field, struct, and enum names from a schema are normally converted to atoms, which are never garbage-collected — repeatedly loading untrusted schemas could exhaust the atom table. Passing `safe: true` to `Flatbuffer.Schema.from_file/2`, `Flatbuffer.Schema.from_string/2`, or `use Flatbuffer` makes decoded maps use string keys and creates no atoms from schema-controlled names. Atom keys remain the default, and both atom and string keys are accepted when reading or writing in either mode.
