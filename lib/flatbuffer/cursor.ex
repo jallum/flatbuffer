@@ -12,7 +12,6 @@ defmodule Flatbuffer.Cursor do
   def skip(%__MODULE__{} = c, offset), do: %__MODULE__{c | offset: c.offset + offset}
 
   def rjump_i32(%__MODULE__{} = c), do: %__MODULE__{c | offset: c.offset - get_i32(c)}
-  def jump_i32(%__MODULE__{} = c), do: %__MODULE__{c | offset: c.offset + get_i32(c)}
   def jump_u32(%__MODULE__{} = c), do: %__MODULE__{c | offset: c.offset + get_u32(c)}
 
   def get_i8(c), do: IOData.to_binary!(c.data, c.offset, 1) |> decode_i8()
@@ -27,7 +26,6 @@ defmodule Flatbuffer.Cursor do
   def get_f64(c), do: IOData.to_binary!(c.data, c.offset, 8) |> decode_f64()
 
   def get_bytes(c, size), do: IOData.to_binary!(c.data, c.offset, size)
-  def get_bytes(c, offset, size), do: IOData.to_binary!(c.data, c.offset + offset, size)
 
   defp decode_i8(<<i8::signed-size(8)>>), do: i8
   defp decode_u8(<<u8::unsigned-size(8)>>), do: u8

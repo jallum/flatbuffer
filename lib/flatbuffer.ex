@@ -52,14 +52,16 @@ defmodule Flatbuffer do
   end
 
   @doc """
-  Same as read/2 but raises on error.
+  Same as read/2 but raises `Flatbuffer.BadFlatbufferError` on error.
   """
   @spec read!(buffer :: iodata(), Schema.t()) :: map()
   def read!(buffer, %Schema{} = schema) do
-    with {:ok, value} <- read(buffer, schema) do
-      value
-    else
-      {:error, _reason} = error -> throw(error)
+    case read(buffer, schema) do
+      {:ok, value} ->
+        value
+
+      {:error, reason} ->
+        raise BadFlatbufferError, message: "Failed to read Flatbuffer: #{inspect(reason)}"
     end
   end
 

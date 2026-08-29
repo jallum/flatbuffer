@@ -33,6 +33,39 @@ defmodule Flatbuffer.FlatbufferTest do
     |> then(fn {:ok, schema} -> schema end)
   end
 
+  def schema_with_vectors(opts \\ []) do
+    """
+    table Root {
+      field: int;
+      nested_table: Nested;
+      x_or_y: X_or_Y;
+      int_vector: [int];
+      nested_vector: [Nested];
+    }
+
+    table Nested {
+      nested_field: int;
+    }
+
+    union X_or_Y {
+      X,
+      Y
+    }
+
+    table X {
+      x: int;
+    }
+
+    table Y {
+      y: string;
+    }
+
+    root_type Root;
+    """
+    |> Flatbuffer.Schema.from_string(opts)
+    |> then(fn {:ok, schema} -> schema end)
+  end
+
   def fb do
     %{
       field: 1,
@@ -106,6 +139,95 @@ defmodule Flatbuffer.FlatbufferTest do
       fb = Flatbuffer.to_binary(map, schema())
       assert {:ok, map} == Flatbuffer.read(fb, schema())
     end
+
+    test "accepts a buffer whose id matches the schema's file_identifier" do
+      {:ok, schema} =
+        Flatbuffer.Schema.from_string("""
+        table Root { field: int; }
+        root_type Root;
+        file_identifier "TEST";
+        """)
+
+      buffer = Flatbuffer.to_binary(%{field: 1}, schema)
+      assert {:ok, %{field: 1}} == Flatbuffer.read(buffer, schema)
+    end
+
+    test "returns an id_mismatch error when the buffer id differs from the schema's" do
+      {:ok, plain_schema} =
+        Flatbuffer.Schema.from_string("table Root { field: int; } root_type Root;")
+
+      {:ok, id_schema} =
+        Flatbuffer.Schema.from_string("""
+        table Root { field: int; }
+        root_type Root;
+        file_identifier "TEST";
+        """)
+
+      buffer = Flatbuffer.to_binary(%{field: 1}, plain_schema)
+
+      assert {:error, {:id_mismatch, %{data: <<0, 0, 0, 0>>, schema: "TEST"}}} ==
+               Flatbuffer.read(buffer, id_schema)
+
+      assert_raise Flatbuffer.BadFlatbufferError, ~r/id_mismatch/, fn ->
+        Flatbuffer.read!(buffer, id_schema)
+      end
+    end
+
+    test "reads a buffer written with a newer schema that has extra fields" do
+      {:ok, v2} =
+        Flatbuffer.Schema.from_string("table Root { a: int; b: int; } root_type Root;")
+
+      {:ok, v1} = Flatbuffer.Schema.from_string("table Root { a: int; } root_type Root;")
+
+      buffer = Flatbuffer.to_binary(%{a: 1, b: 2}, v2)
+      assert {:ok, %{a: 1}} == Flatbuffer.read(buffer, v1)
+    end
+
+    test "omits both union slots when the discriminator is zeroed" do
+      map = %{field: 1, x_or_y_type: "Y", x_or_y: %{y: "string"}}
+      buffer = map |> Flatbuffer.to_binary(schema()) |> replace_table_field(2, 0)
+
+      assert {:ok, %{field: 1}} == Flatbuffer.read(buffer, schema())
+    end
+
+    test "omits both union slots when the discriminator is unknown" do
+      map = %{field: 1, x_or_y_type: "Y", x_or_y: %{y: "string"}}
+      buffer = map |> Flatbuffer.to_binary(schema()) |> replace_table_field(2, 255)
+
+      assert {:ok, %{field: 1}} == Flatbuffer.read(buffer, schema())
+    end
+
+    test "omits the union value when its vtable slot is empty" do
+      map = %{field: 1, x_or_y_type: "Y", x_or_y: %{y: "string"}}
+      buffer = map |> Flatbuffer.to_binary(schema()) |> zero_vtable_entry(3)
+
+      assert {:ok, %{field: 1, x_or_y_type: "Y"}} == Flatbuffer.read(buffer, schema())
+    end
+
+    test "omits an absent table field that sits before a set field" do
+      map = %{field: 1, x_or_y_type: "X", x_or_y: %{x: 3}}
+      buffer = Flatbuffer.to_binary(map, schema())
+
+      assert {:ok, map} == Flatbuffer.read(buffer, schema())
+    end
+
+    test "raises BadFlatbufferError via get when an enum value is out of range" do
+      {:ok, schema} =
+        Flatbuffer.Schema.from_string("""
+        enum Mood : byte { HAPPY, SAD }
+        table Root { mood: Mood = HAPPY; }
+        root_type Root;
+        """)
+
+      buffer =
+        %{mood: :SAD}
+        |> Flatbuffer.to_binary(schema)
+        |> replace_table_field(0, 255)
+
+      assert_raise Flatbuffer.BadFlatbufferError, ~r/not_in_enum/, fn ->
+        Flatbuffer.get(buffer, :mood, schema)
+      end
+    end
   end
 
   describe "Flatbuffer.get/4" do
@@ -164,6 +286,42 @@ defmodule Flatbuffer.FlatbufferTest do
 
       assert "X" == Flatbuffer.get(fb_x, :x_or_y_type, schema)
     end
+
+    test "it descends into a union value through a path" do
+      schema = schema()
+
+      fb_y =
+        %{x_or_y_type: "Y", x_or_y: %{y: "string"}}
+        |> Flatbuffer.to_binary(schema)
+
+      assert "string" == Flatbuffer.get(fb_y, [:x_or_y, :y], schema)
+    end
+
+    test "it returns a vector element by index" do
+      schema = schema_with_vectors()
+
+      buffer =
+        %{int_vector: [10, 20, 30], nested_vector: [%{nested_field: 7}]}
+        |> Flatbuffer.to_binary(schema)
+
+      assert 20 == Flatbuffer.get(buffer, [:int_vector, 1], schema)
+      assert 7 == Flatbuffer.get(buffer, [:nested_vector, 0, :nested_field], schema)
+    end
+
+    test "it returns nil for an out-of-range vector index" do
+      schema = schema_with_vectors()
+      buffer = Flatbuffer.to_binary(%{int_vector: [10]}, schema)
+
+      assert nil == Flatbuffer.get(buffer, [:int_vector, 99], schema)
+    end
+
+    test "it returns the default for a field whose vtable slot is empty" do
+      schema = schema()
+      buffer = Flatbuffer.to_binary(%{nested_table: %{nested_field: 2}}, schema)
+
+      assert nil == Flatbuffer.get(buffer, :field, schema)
+      assert 42 == Flatbuffer.get(buffer, :field, schema, 42)
+    end
   end
 
   describe "Flatbuffer.fetch/4" do
@@ -209,6 +367,15 @@ defmodule Flatbuffer.FlatbufferTest do
     value_offset = table_offset + field_offset
     <<prefix::binary-size(^value_offset), _old_value, suffix::binary>> = buffer
     prefix <> <<value>> <> suffix
+  end
+
+  defp zero_vtable_entry(buffer, field_id) do
+    <<table_offset::unsigned-little-32, _::binary>> = buffer
+    <<_::binary-size(^table_offset), vtable_offset::signed-little-32, _::binary>> = buffer
+    vtable_start = table_offset - vtable_offset
+    field_entry = vtable_start + 4 + field_id * 2
+    <<prefix::binary-size(^field_entry), _entry::binary-size(2), suffix::binary>> = buffer
+    prefix <> <<0, 0>> <> suffix
   end
 
   defp refute_existing_atom(name) do

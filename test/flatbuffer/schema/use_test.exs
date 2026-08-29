@@ -14,6 +14,11 @@ defmodule Flatbuffer.Schema.UseTest do
       safe: true
   end
 
+  defmodule NoPathTestSchema do
+    use Flatbuffer,
+      file: "test/examples/test_schema.fbs"
+  end
+
   describe "When using a schema to build a module" do
     test "it will build the schema correctly" do
       assert %Flatbuffer.Schema{
@@ -49,6 +54,18 @@ defmodule Flatbuffer.Schema.UseTest do
         |> Base.decode16!()
 
       assert 12 = TestSchema.get(binary_value, "foo")
+    end
+
+    test "it resolves the schema file relative to the cwd when no :path is given" do
+      assert TestSchema.schema() == NoPathTestSchema.schema()
+    end
+
+    test "it raises at compile time when the schema file cannot be loaded" do
+      assert_raise RuntimeError, ~r/Failed to load schema from file/, fn ->
+        defmodule MissingFileSchema do
+          use Flatbuffer, file: "does_not_exist.fbs"
+        end
+      end
     end
   end
 end
