@@ -171,6 +171,7 @@ Flatbuffer. CI runs them on the newest supported Elixir/OTP combination.
 * shared strings (`shared` field attribute)
 * shared vtables
 * structs
+* alignment
 * unions
 * enums
 * defaults
@@ -181,5 +182,4 @@ Flatbuffer. CI runs them on the newest supported Elixir/OTP combination.
 
 ### features only in flatc
 
-* alignment
 * additional attributes other than `shared`

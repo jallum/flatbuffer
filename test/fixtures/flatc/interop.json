@@ -13,5 +13,19 @@
   child: {
     id: 7,
     label: "nested"
+  },
+  scalar_mix: {
+    prefix: 1,
+    wide: 72623859790382856,
+    suffix: 515
+  },
+  scalar_mixes: [
+    { prefix: 2, wide: 17, suffix: 18 },
+    { prefix: 3, wide: 19, suffix: 20 }
+  ],
+  nested_mix: {
+    flag: 4,
+    value: { prefix: 5, wide: 21, suffix: 22 },
+    count: 4000000001
   }
 }

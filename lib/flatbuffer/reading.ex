@@ -48,16 +48,11 @@ defmodule Flatbuffer.Reading do
   end
 
   def read({:struct, %{name: struct_name}}, c, schema) do
-    {:struct, %{members: members}} = Map.get(schema.entities, struct_name)
+    {:struct, %{layout: layout}} = Map.fetch!(schema.entities, struct_name)
 
-    {struct, _offset} =
-      members
-      |> Enum.reduce({%{}, 0}, fn {name, type}, {acc, offset} ->
-        value = read({type, %{}}, Cursor.skip(c, offset), schema)
-        {Map.put(acc, name, value), offset + Utils.scalar_size(type)}
-      end)
-
-    struct
+    Enum.reduce(layout, %{}, fn {name, type, offset}, struct ->
+      Map.put(struct, name, read(type, Cursor.skip(c, offset), schema))
+    end)
   end
 
   def read({:table, %{name: table_name}}, c, schema) do

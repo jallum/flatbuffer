@@ -50,5 +50,23 @@ int main(int argc, char **argv) {
   if (child == nullptr || child->id() != 7) return 16;
   if (child->label() == nullptr || child->label()->str() != "nested") return 17;
 
+  const ScalarMix *scalar_mix = root->scalar_mix();
+  if (scalar_mix == nullptr || scalar_mix->prefix() != 1) return 18;
+  if (scalar_mix->wide() != UINT64_C(72623859790382856)) return 19;
+  if (scalar_mix->suffix() != 515) return 20;
+
+  const auto *scalar_mixes = root->scalar_mixes();
+  if (scalar_mixes == nullptr || scalar_mixes->size() != 2) return 21;
+  if (scalar_mixes->Get(0)->prefix() != 2 || scalar_mixes->Get(0)->wide() != 17 ||
+      scalar_mixes->Get(0)->suffix() != 18) return 22;
+  if (scalar_mixes->Get(1)->prefix() != 3 || scalar_mixes->Get(1)->wide() != 19 ||
+      scalar_mixes->Get(1)->suffix() != 20) return 23;
+
+  const NestedMix *nested_mix = root->nested_mix();
+  if (nested_mix == nullptr || nested_mix->flag() != 4) return 24;
+  if (nested_mix->value().prefix() != 5 || nested_mix->value().wide() != 21 ||
+      nested_mix->value().suffix() != 22) return 25;
+  if (nested_mix->count() != UINT32_C(4000000001)) return 26;
+
   return 0;
 }

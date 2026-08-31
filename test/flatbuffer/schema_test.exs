@@ -36,6 +36,42 @@ defmodule Flatbuffer.SchemaTest do
       assert {:error, {:type_not_found, "Missing"}} == Schema.from_string(schema)
     end
 
+    test "rejects recursively defined structs" do
+      schema = """
+      struct Recursive {
+        value: Recursive;
+      }
+
+      table Root {
+        value: Recursive;
+      }
+
+      root_type Root;
+      """
+
+      assert {:error, {:recursive_struct, ["Recursive", "Recursive"]}} ==
+               Schema.from_string(schema)
+    end
+
+    test "rejects reference types inside structs" do
+      schema = """
+      table Child {}
+
+      struct Invalid {
+        child: Child;
+      }
+
+      table Root {
+        value: Invalid;
+      }
+
+      root_type Root;
+      """
+
+      assert {:error, {:invalid_struct_member, "Invalid", {:table, %{name: "Child"}}}} ==
+               Schema.from_string(schema)
+    end
+
     test "ignores field attributes it does not recognize" do
       schema = """
       table Root {
