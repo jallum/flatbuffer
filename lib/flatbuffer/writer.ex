@@ -269,11 +269,30 @@ defmodule Flatbuffer.Writer do
   end
 
   defp inline({:struct, %{name: struct_name}}, map, path, schema) when is_map(map) do
-    {:struct, %{members: members}} = Map.fetch!(schema.entities, struct_name)
+    {:struct, %{layout: layout, size: struct_size}} =
+      Map.fetch!(schema.entities, struct_name)
 
-    Enum.map(members, fn {name, type} ->
-      inline({type, %{}}, get_field(map, name), [name | path], schema)
-    end)
+    {chunks, end_offset} =
+      Enum.reduce(layout, {[], 0}, fn {name, type, offset}, {chunks, end_offset} ->
+        padding = zero_padding(offset - end_offset)
+        data = inline(type, get_field(map, name), [name | path], schema)
+        size = Flatbuffer.Utils.sizeof(type, schema)
+
+        chunks =
+          case padding do
+            <<>> -> [data | chunks]
+            _ -> [data, padding | chunks]
+          end
+
+        {chunks, offset + size}
+      end)
+
+    tail_padding = zero_padding(struct_size - end_offset)
+
+    case tail_padding do
+      <<>> -> Enum.reverse(chunks)
+      _ -> Enum.reverse([tail_padding | chunks])
+    end
   end
 
   defp inline({:bool, _}, true, _path, _schema), do: <<1>>
@@ -327,15 +346,10 @@ defmodule Flatbuffer.Writer do
 
   defp without_default(type), do: type
 
-  defp alignment({:enum, %{name: enum_name}}, schema) do
-    {:enum, %{type: type}} = Map.fetch!(schema.entities, enum_name)
-    alignment(type, schema)
-  end
+  defp alignment(type, schema), do: Flatbuffer.Utils.alignment(type, schema)
 
-  defp alignment({:struct, _}, _schema), do: 1
-  defp alignment({type, _}, _schema) when type in [:string, :vector, :table], do: 4
-  defp alignment({type, _}, _schema), do: Flatbuffer.Utils.scalar_size(type)
-  defp alignment(type, _schema), do: Flatbuffer.Utils.scalar_size(type)
+  defp zero_padding(0), do: <<>>
+  defp zero_padding(size), do: :binary.copy(<<0>>, size)
 
   defp push_raw(%State{} = state, data) when is_binary(data),
     do: %{state | chunks: [data | state.chunks], size: state.size + byte_size(data)}

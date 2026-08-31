@@ -236,7 +236,17 @@ defmodule Flatbuffer.Schema.TableTest do
                          "vector_of_struct" => 27
                        }
                      }},
-                  "Struct" => {:struct, %{members: [field1: :byte, field2: :short]}},
+                  "Struct" =>
+                    {:struct,
+                     %{
+                       members: [field1: :byte, field2: :short],
+                       layout: [
+                         {:field1, {:byte, %{default: 0}}, 0},
+                         {:field2, {:short, %{default: 0}}, 2}
+                       ],
+                       alignment: 2,
+                       size: 4
+                     }},
                   "ByteEnum" =>
                     {:enum,
                      %{

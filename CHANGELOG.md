@@ -1,5 +1,11 @@
 # Changelog
 
+## Unreleased
+
+- Structs now follow FlatBuffers alignment rules, including internal and trailing padding,
+  nested structs, and aligned struct vectors. Buffers are verified bidirectionally against
+  `flatc`.
+
 ## 0.5.2 — 2026-08-28
 
 - **Schema includes no longer require a `root_type` in every file.** Previously each included `.fbs` file had to declare its own `root_type` or the whole load failed with `:root_type_is_undefined`, which made real-world, flatc-style type-only include files unusable. The root type is now resolved once, after all includes are merged, which also means the top-level `root_type` can reference a type defined in an included file:

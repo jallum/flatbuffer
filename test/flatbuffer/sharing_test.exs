@@ -220,6 +220,57 @@ defmodule Flatbuffer.SharingTest do
         assert rem(byte_size(buffer), 8) == 0
       end
     end
+
+    test "round-trips padded and nested structs as fields and vector elements" do
+      schema =
+        schema!("""
+        enum Code : ushort {
+          FIRST,
+          SECOND
+        }
+
+        struct ScalarMix {
+          prefix: ubyte;
+          code: Code;
+          wide: ulong;
+          suffix: ushort;
+        }
+
+        struct NestedMix {
+          flag: ubyte;
+          value: ScalarMix;
+          count: uint;
+        }
+
+        table Root {
+          scalar_mix: ScalarMix;
+          scalar_mixes: [ScalarMix];
+          nested_mix: NestedMix;
+          nested_mixes: [NestedMix];
+        }
+
+        root_type Root;
+        """)
+
+      scalar_mix = %{prefix: 1, code: :SECOND, wide: 72_623_859_790_382_856, suffix: 515}
+
+      nested_mix = %{
+        flag: 2,
+        value: %{prefix: 3, code: :FIRST, wide: 17, suffix: 18},
+        count: 4_000_000_001
+      }
+
+      data = %{
+        scalar_mix: scalar_mix,
+        scalar_mixes: [scalar_mix, %{prefix: 4, code: :SECOND, wide: 19, suffix: 20}],
+        nested_mix: nested_mix,
+        nested_mixes: [nested_mix]
+      }
+
+      assert 24 == Flatbuffer.Utils.sizeof({:struct, %{name: "ScalarMix"}}, schema)
+      assert 40 == Flatbuffer.Utils.sizeof({:struct, %{name: "NestedMix"}}, schema)
+      assert data == data |> Flatbuffer.to_binary(schema) |> Flatbuffer.read!(schema)
+    end
   end
 
   defp schema!(source) do

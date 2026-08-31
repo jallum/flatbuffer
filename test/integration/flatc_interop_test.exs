@@ -18,7 +18,17 @@ defmodule Flatbuffer.FlatcInteropTest do
     position: %{x: 1.5, y: -2.25, z: 3.75},
     name: "interoperable",
     values: [-2, 0, 3],
-    child: %{id: 7, label: "nested"}
+    child: %{id: 7, label: "nested"},
+    scalar_mix: %{prefix: 1, wide: 72_623_859_790_382_856, suffix: 515},
+    scalar_mixes: [
+      %{prefix: 2, wide: 17, suffix: 18},
+      %{prefix: 3, wide: 19, suffix: 20}
+    ],
+    nested_mix: %{
+      flag: 4,
+      value: %{prefix: 5, wide: 21, suffix: 22},
+      count: 4_000_000_001
+    }
   }
 
   setup_all do

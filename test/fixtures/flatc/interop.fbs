@@ -12,6 +12,18 @@ struct Position {
   z: float;
 }
 
+struct ScalarMix {
+  prefix: ubyte;
+  wide: ulong;
+  suffix: ushort;
+}
+
+struct NestedMix {
+  flag: ubyte;
+  value: ScalarMix;
+  count: uint;
+}
+
 table Child {
   id: int;
   label: string;
@@ -26,6 +38,9 @@ table Root {
   name: string;
   values: [int];
   child: Child;
+  scalar_mix: ScalarMix;
+  scalar_mixes: [ScalarMix];
+  nested_mix: NestedMix;
 }
 
 root_type Root;

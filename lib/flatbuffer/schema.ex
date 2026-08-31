@@ -76,7 +76,14 @@ defmodule Flatbuffer.Schema do
              field_ids: %{String.t() => non_neg_integer()}
            }}
 
-  @type struct_def :: {:struct, %{members: [{field_name(), type_def()}]}}
+  @type struct_def ::
+          {:struct,
+           %{
+             members: [{field_name(), type_def()}],
+             layout: [{field_name(), type_ref(), non_neg_integer()}],
+             alignment: pos_integer(),
+             size: non_neg_integer()
+           }}
 
   @type union_def ::
           {:union,
@@ -98,6 +105,8 @@ defmodule Flatbuffer.Schema do
           | {:error, {:root_type_not_found, type_name :: String.t()}}
           | {:error, {:root_type_is_not_a_table, type_name :: String.t()}}
           | {:error, {:type_not_found, type_name :: String.t()}}
+          | {:error, {:recursive_struct, [type_name()]}}
+          | {:error, {:invalid_struct_member, type_name(), type_ref()}}
 
   @doc """
   Reads and parses a FlatBuffer schema from a file.
@@ -321,14 +330,84 @@ defmodule Flatbuffer.Schema do
            Map.put(acc, key, {:union, %{members: members}})
 
          {key, {:struct, fields}}, acc ->
-           members = Enum.map(fields, fn {name, type} -> {output_name(name, safe), type} end)
-           Map.put(acc, key, {:struct, %{members: members}})
+           Map.put(acc, key, {:struct, struct_options(key, fields, entities, safe)})
        end
      )}
   catch
-    {:error, {:type_not_found, _type_name}} = error ->
+    {:error, _reason} = error ->
       error
   end
+
+  defp struct_options(name, fields, entities, safe) do
+    {members, layout, offset, alignment} =
+      Enum.reduce(fields, {[], [], 0, 1}, fn {field_name, field_type},
+                                             {members, layout, offset, struct_alignment} ->
+        resolved_type = resolve_field_type(field_type, entities)
+        {size, alignment} = inline_type_measure(resolved_type, entities, [name])
+        offset = Flatbuffer.Utils.align(offset, alignment)
+        output_name = output_name(field_name, safe)
+
+        {
+          [{output_name, field_type} | members],
+          [{output_name, resolved_type, offset} | layout],
+          offset + size,
+          max(struct_alignment, alignment)
+        }
+      end)
+
+    %{
+      members: Enum.reverse(members),
+      layout: Enum.reverse(layout),
+      alignment: alignment,
+      size: Flatbuffer.Utils.align(offset, alignment)
+    }
+  end
+
+  defp inline_type_measure({:struct, %{name: name}}, entities, parents) do
+    if name in parents do
+      throw({:error, {:recursive_struct, Enum.reverse([name | parents])}})
+    end
+
+    case Map.fetch!(entities, name) do
+      {:struct, fields} ->
+        {offset, alignment} =
+          Enum.reduce(fields, {0, 1}, fn {_field_name, field_type}, {offset, struct_alignment} ->
+            resolved_type = resolve_field_type(field_type, entities)
+            {size, alignment} = inline_type_measure(resolved_type, entities, [name | parents])
+            offset = Flatbuffer.Utils.align(offset, alignment)
+            {offset + size, max(struct_alignment, alignment)}
+          end)
+
+        {Flatbuffer.Utils.align(offset, alignment), alignment}
+    end
+  end
+
+  defp inline_type_measure({:enum, %{name: name}}, entities, _parents) do
+    {{:enum, type}, _members} = Map.fetch!(entities, name)
+    size = Flatbuffer.Utils.scalar_size(type)
+    {size, size}
+  end
+
+  defp inline_type_measure({type, _options}, _entities, _parents)
+       when type in [
+              :bool,
+              :byte,
+              :ubyte,
+              :short,
+              :ushort,
+              :int,
+              :uint,
+              :float,
+              :long,
+              :ulong,
+              :double
+            ] do
+    size = Flatbuffer.Utils.scalar_size(type)
+    {size, size}
+  end
+
+  defp inline_type_measure(type, _entities, parents),
+    do: throw({:error, {:invalid_struct_member, List.first(parents), type}})
 
   defp enumerate_members(members, safe) do
     {members, _next_value} =

@@ -1,6 +1,8 @@
 defmodule Flatbuffer.Utils do
   @moduledoc false
 
+  def align(offset, alignment), do: offset + Integer.mod(-offset, alignment)
+
   def scalar_size({type, _options}), do: scalar_size(type)
   def scalar_size(:byte), do: 1
   def scalar_size(:ubyte), do: 1
@@ -21,8 +23,8 @@ defmodule Flatbuffer.Utils do
   end
 
   def sizeof({:struct, %{name: struct_name}}, schema) do
-    {:struct, %{members: members}} = Map.get(schema.entities, struct_name)
-    Enum.reduce(members, 0, fn {_, type}, acc -> acc + sizeof(type, schema) end)
+    {:struct, %{size: size}} = Map.fetch!(schema.entities, struct_name)
+    size
   end
 
   def sizeof({:table, _}, _), do: 4
@@ -31,4 +33,18 @@ defmodule Flatbuffer.Utils do
   def sizeof({:string, _}, _), do: 4
 
   def sizeof(type, _), do: scalar_size(type)
+
+  def alignment({:enum, %{name: enum_name}}, schema) do
+    {:enum, %{type: type}} = Map.fetch!(schema.entities, enum_name)
+    alignment(type, schema)
+  end
+
+  def alignment({:struct, %{name: struct_name}}, schema) do
+    {:struct, %{alignment: alignment}} = Map.fetch!(schema.entities, struct_name)
+    alignment
+  end
+
+  def alignment({type, _}, _schema) when type in [:string, :vector, :table], do: 4
+  def alignment({type, _}, _schema), do: scalar_size(type)
+  def alignment(type, _schema), do: scalar_size(type)
 end

@@ -48,7 +48,11 @@ defmodule FlatBuffer.Schema.UnionTypesTest do
                        field_ids: %{"data_type" => 0, "data" => 1, "additions_value" => 2}
                      }},
                   "hello" =>
-                    {:table, %{fields: {{:salute, {:string, %{}}}}, field_ids: %{"salute" => 0}}}
+                    {:table,
+                     %{
+                       fields: {{:salute, {:string, %{}}}},
+                       field_ids: %{"salute" => 0}
+                     }}
                 },
                 root_type: {:table, %{name: "command_root"}},
                 id: "cmnd"
