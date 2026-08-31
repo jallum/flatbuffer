@@ -55,6 +55,27 @@ defmodule Flatbuffer.WriterErrorsTest do
              catch_throw(Flatbuffer.to_binary(%{x_or_y_type: "Z", x_or_y: %{y: "s"}}, schema()))
   end
 
+  def union_vector_schema do
+    """
+    table A { x: int; }
+    union U { A }
+    table Root { us: [U]; }
+    root_type Root;
+    """
+    |> Flatbuffer.Schema.from_string()
+    |> then(fn {:ok, schema} -> schema end)
+  end
+
+  test "throws wrong_type when writing a vector of unions" do
+    assert {:error, {:wrong_type, :union, %{x: 1}, _path}} =
+             catch_throw(Flatbuffer.to_binary(%{us: [%{x: 1}]}, union_vector_schema()))
+  end
+
+  test "throws unknown_scalar when writing an empty vector of unions" do
+    assert {:error, {:unknown_scalar, :union}} =
+             catch_throw(Flatbuffer.to_binary(%{us: []}, union_vector_schema()))
+  end
+
   test "safe schemas skip absent fields without creating atoms" do
     field_name = "writer_safe_#{System.unique_integer([:positive])}"
 
