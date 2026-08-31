@@ -55,36 +55,55 @@ defmodule Flatbuffer.Writer do
 
   defp create_vector(state, type, values, path, schema) do
     type = without_default(type)
-    vector_length = length(values)
+    create_vector_contents(state, type, values, path, schema, length(values))
+  end
 
+  defp create_vector_contents(
+         state,
+         {type, _} = element_type,
+         values,
+         path,
+         schema,
+         vector_length
+       )
+       when type in [:string, :vector, :table] do
     {elements, state, _next_index} =
       Enum.reduce(values, {[], state, 0}, fn value, {elements, state, index} ->
-        {element, state} = encode_vector_element(type, value, index, path, schema, state)
-        {[element | elements], state, index + 1}
+        {offset, state} = encode(element_type, value, [[index] | path], schema, state)
+
+        {[offset | elements], state, index + 1}
       end)
 
-    element_size = Flatbuffer.Utils.sizeof(type, schema)
-    payload_size = vector_length * element_size
-    state = pre_align(state, payload_size, 4)
-    state = pre_align(state, payload_size, alignment(type, schema))
-    state = Enum.reduce(elements, state, &push_vector_element/2)
+    state = align_vector(state, element_type, vector_length, schema)
+
+    state =
+      Enum.reduce(elements, state, fn offset, state ->
+        {_field_offset, state} = push_offset(state, offset)
+        state
+      end)
 
     state = push_raw(state, <<vector_length::unsigned-little-32>>)
     {state.size, state}
   end
 
-  defp encode_vector_element({type, _} = field_type, value, index, path, schema, state)
-       when type in [:string, :vector, :table] do
-    {offset, state} = encode(field_type, value, [[index] | path], schema, state)
-    {{:offset, offset}, state}
+  defp create_vector_contents(state, type, values, path, schema, vector_length) do
+    {elements, _next_index} =
+      Enum.map_reduce(values, 0, fn value, index ->
+        {inline(type, value, [[index] | path], schema), index + 1}
+      end)
+
+    state = align_vector(state, type, vector_length, schema)
+    state = push_raw(state, elements)
+    state = push_raw(state, <<vector_length::unsigned-little-32>>)
+    {state.size, state}
   end
 
-  defp encode_vector_element(type, value, index, path, schema, state),
-    do: {{:inline, inline(type, value, [[index] | path], schema), type}, state}
-
-  defp push_vector_element({:offset, offset}, state), do: elem(push_offset(state, offset), 1)
-
-  defp push_vector_element({:inline, data, _type}, state), do: push_raw(state, data)
+  defp align_vector(state, type, vector_length, schema) do
+    element_size = Flatbuffer.Utils.sizeof(type, schema)
+    payload_size = vector_length * element_size
+    state = pre_align(state, payload_size, 4)
+    pre_align(state, payload_size, alignment(type, schema))
+  end
 
   defp create_table(state, table_name, map, path, schema) do
     {:table, %{fields: fields}} = Map.fetch!(schema.entities, table_name)
