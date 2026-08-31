@@ -324,10 +324,12 @@ defmodule Flatbuffer.FlatbufferTest do
     end
 
     test "it raises when the schema names a field type it cannot read" do
-      {:ok, good} = Flatbuffer.Schema.from_string("table Root { x: int; } root_type Root;")
+      {:ok, %Flatbuffer.Schema{} = good} =
+        Flatbuffer.Schema.from_string("table Root { x: int; } root_type Root;")
+
       buffer = Flatbuffer.to_binary(%{x: 42}, good)
 
-      corrupt = %Flatbuffer.Schema{
+      corrupt = %{
         good
         | entities: %{
             "Root" => {:table, %{fields: {{:x, {:frobnicate, %{}}}}, field_ids: %{"x" => 0}}}
@@ -340,10 +342,12 @@ defmodule Flatbuffer.FlatbufferTest do
     end
 
     test "it raises when the schema is missing the table definition for the path" do
-      {:ok, good} = Flatbuffer.Schema.from_string("table Root { x: int; } root_type Root;")
+      {:ok, %Flatbuffer.Schema{} = good} =
+        Flatbuffer.Schema.from_string("table Root { x: int; } root_type Root;")
+
       buffer = Flatbuffer.to_binary(%{x: 42}, good)
 
-      missing = %Flatbuffer.Schema{good | entities: %{}}
+      missing = %{good | entities: %{}}
 
       assert_raise Flatbuffer.BadFlatbufferError, "Table definition not found: Root", fn ->
         Flatbuffer.get(buffer, [:x], missing)
