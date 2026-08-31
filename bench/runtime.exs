@@ -19,7 +19,10 @@ buffer = Flatbuffer.to_binary(value, schema)
 
 Benchee.run(
   %{
-    "encode to binary" => fn -> Flatbuffer.to_binary(value, schema) end,
+    "encode to binary (interpreted)" => fn -> Flatbuffer.to_binary(value, schema) end,
+    "encode to binary (generated)" => fn ->
+      Flatbuffer.Bench.GeneratedSchema.to_binary(value)
+    end,
     "decode full buffer (interpreted)" => fn -> Flatbuffer.read!(buffer, schema) end,
     "decode full buffer (generated)" => fn ->
       Flatbuffer.Bench.GeneratedSchema.read!(buffer)

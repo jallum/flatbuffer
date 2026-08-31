@@ -146,8 +146,10 @@ iex(4)> ColorScheme.get(color_scheme_fb, [:background, :green])
 100
 ```
 
-`use Flatbuffer` compiles a schema-specialized reader for binary buffers. Calls with general
-iodata retain the interpreted reader fallback and the same public API.
+`use Flatbuffer` compiles schema-specialized readers and writers. Binary reads use generated
+decode clauses, while `to_iolist/1` and `to_binary/1` use a generated reverse builder with
+precomputed field ordering, offsets, sizes, and alignments. Reads from general iodata retain
+the interpreted reader fallback and the same public API.
 
 ## Interoperability tests
 

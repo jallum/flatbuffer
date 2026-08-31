@@ -10,6 +10,11 @@ defmodule Flatbuffer.Writer do
   def to_iolist(%{} = map, schema) do
     {root, state} = encode(schema.root_type, map, [], schema, %State{})
     buffer_id = schema.id || <<0, 0, 0, 0>>
+    finish(state, root, buffer_id)
+  end
+
+  @doc false
+  def finish(state, root, buffer_id) do
     state = pre_align(state, 4 + byte_size(buffer_id), state.min_align)
     state = push_raw(state, buffer_id)
     {_root_reference, state} = push_offset(state, root)
@@ -32,7 +37,8 @@ defmodule Flatbuffer.Writer do
     wrong_type(type, data, path)
   end
 
-  defp create_string(%State{strings: strings} = state, string, true) do
+  @doc false
+  def create_string(%State{strings: strings} = state, string, true) do
     case Map.fetch(strings, string) do
       {:ok, offset} ->
         {offset, state}
@@ -43,7 +49,7 @@ defmodule Flatbuffer.Writer do
     end
   end
 
-  defp create_string(state, string, false), do: emit_string(state, string)
+  def create_string(state, string, false), do: emit_string(state, string)
 
   defp emit_string(state, string) do
     state = pre_align(state, byte_size(string) + 1, 4)
@@ -74,7 +80,33 @@ defmodule Flatbuffer.Writer do
         {[offset | elements], state, index + 1}
       end)
 
-    state = align_vector(state, element_type, vector_length, schema)
+    finish_reference_vector(
+      state,
+      elements,
+      vector_length,
+      Flatbuffer.Utils.sizeof(element_type, schema),
+      alignment(element_type, schema)
+    )
+  end
+
+  defp create_vector_contents(state, type, values, path, schema, vector_length) do
+    {elements, _next_index} =
+      Enum.map_reduce(values, 0, fn value, index ->
+        {inline(type, value, [[index] | path], schema), index + 1}
+      end)
+
+    finish_inline_vector(
+      state,
+      elements,
+      vector_length,
+      Flatbuffer.Utils.sizeof(type, schema),
+      alignment(type, schema)
+    )
+  end
+
+  @doc false
+  def finish_reference_vector(state, elements, vector_length, element_size, alignment) do
+    state = align_vector(state, vector_length, element_size, alignment)
 
     state =
       Enum.reduce(elements, state, fn offset, state ->
@@ -86,23 +118,18 @@ defmodule Flatbuffer.Writer do
     {state.size, state}
   end
 
-  defp create_vector_contents(state, type, values, path, schema, vector_length) do
-    {elements, _next_index} =
-      Enum.map_reduce(values, 0, fn value, index ->
-        {inline(type, value, [[index] | path], schema), index + 1}
-      end)
-
-    state = align_vector(state, type, vector_length, schema)
+  @doc false
+  def finish_inline_vector(state, elements, vector_length, element_size, alignment) do
+    state = align_vector(state, vector_length, element_size, alignment)
     state = push_raw(state, elements)
     state = push_raw(state, <<vector_length::unsigned-little-32>>)
     {state.size, state}
   end
 
-  defp align_vector(state, type, vector_length, schema) do
-    element_size = Flatbuffer.Utils.sizeof(type, schema)
+  defp align_vector(state, vector_length, element_size, alignment) do
     payload_size = vector_length * element_size
     state = pre_align(state, payload_size, 4)
-    pre_align(state, payload_size, alignment(type, schema))
+    pre_align(state, payload_size, alignment)
   end
 
   defp create_table(state, table_name, map, path, schema) do
@@ -205,6 +232,11 @@ defmodule Flatbuffer.Writer do
 
     {locations, state} = Enum.reduce(fields, {[], state}, &emit_table_field(&1, &2, schema))
 
+    finish_table(state, table_start, locations)
+  end
+
+  @doc false
+  def finish_table(state, table_start, locations) do
     state = align(state, 4)
     table_offset = state.size + 4
     object_size = table_offset - table_start
@@ -295,56 +327,61 @@ defmodule Flatbuffer.Writer do
     end
   end
 
-  defp inline({:bool, _}, true, _path, _schema), do: <<1>>
-  defp inline({:bool, _}, false, _path, _schema), do: <<0>>
+  defp inline({_type, _} = scalar, value, path, _schema),
+    do: inline_scalar(scalar, value, path)
 
-  defp inline({:byte, _}, value, _path, _schema)
-       when is_integer(value) and value >= -128 and value <= 127,
-       do: <<value::signed-8>>
+  @doc false
+  def inline_scalar({:bool, _}, true, _path), do: <<1>>
+  def inline_scalar({:bool, _}, false, _path), do: <<0>>
 
-  defp inline({:ubyte, _}, value, _path, _schema)
-       when is_integer(value) and value >= 0 and value <= 255,
-       do: <<value::unsigned-8>>
+  def inline_scalar({:byte, _}, value, _path)
+      when is_integer(value) and value >= -128 and value <= 127,
+      do: <<value::signed-8>>
 
-  defp inline({:short, _}, value, _path, _schema)
-       when is_integer(value) and value >= -32_768 and value <= 32_767,
-       do: <<value::signed-little-16>>
+  def inline_scalar({:ubyte, _}, value, _path)
+      when is_integer(value) and value >= 0 and value <= 255,
+      do: <<value::unsigned-8>>
 
-  defp inline({:ushort, _}, value, _path, _schema)
-       when is_integer(value) and value >= 0 and value <= 65_535,
-       do: <<value::unsigned-little-16>>
+  def inline_scalar({:short, _}, value, _path)
+      when is_integer(value) and value >= -32_768 and value <= 32_767,
+      do: <<value::signed-little-16>>
 
-  defp inline({:int, _}, value, _path, _schema)
-       when is_integer(value) and value >= -2_147_483_648 and value <= 2_147_483_647,
-       do: <<value::signed-little-32>>
+  def inline_scalar({:ushort, _}, value, _path)
+      when is_integer(value) and value >= 0 and value <= 65_535,
+      do: <<value::unsigned-little-16>>
 
-  defp inline({:uint, _}, value, _path, _schema)
-       when is_integer(value) and value >= 0 and value <= 4_294_967_295,
-       do: <<value::unsigned-little-32>>
+  def inline_scalar({:int, _}, value, _path)
+      when is_integer(value) and value >= -2_147_483_648 and value <= 2_147_483_647,
+      do: <<value::signed-little-32>>
 
-  defp inline({:float, _}, value, _path, _schema)
-       when is_number(value) and value >= -3.4e+38 and value <= 3.4e+38,
-       do: <<value::float-little-32>>
+  def inline_scalar({:uint, _}, value, _path)
+      when is_integer(value) and value >= 0 and value <= 4_294_967_295,
+      do: <<value::unsigned-little-32>>
 
-  defp inline({:long, _}, value, _path, _schema)
-       when is_integer(value) and value >= -9_223_372_036_854_775_808 and
-              value <= 9_223_372_036_854_775_807,
-       do: <<value::signed-little-64>>
+  def inline_scalar({:float, _}, value, _path)
+      when is_number(value) and value >= -3.4e+38 and value <= 3.4e+38,
+      do: <<value::float-little-32>>
 
-  defp inline({:ulong, _}, value, _path, _schema)
-       when is_integer(value) and value >= 0 and value <= 18_446_744_073_709_551_615,
-       do: <<value::unsigned-little-64>>
+  def inline_scalar({:long, _}, value, _path)
+      when is_integer(value) and value >= -9_223_372_036_854_775_808 and
+             value <= 9_223_372_036_854_775_807,
+      do: <<value::signed-little-64>>
 
-  defp inline({:double, _}, value, _path, _schema)
-       when is_number(value) and value >= -1.7e+308 and value <= 1.7e+308,
-       do: <<value::float-little-64>>
+  def inline_scalar({:ulong, _}, value, _path)
+      when is_integer(value) and value >= 0 and value <= 18_446_744_073_709_551_615,
+      do: <<value::unsigned-little-64>>
 
-  defp inline({type, _}, value, path, _schema), do: wrong_type(type, value, path)
+  def inline_scalar({:double, _}, value, _path)
+      when is_number(value) and value >= -1.7e+308 and value <= 1.7e+308,
+      do: <<value::float-little-64>>
 
-  defp without_default({type, options}) when is_map(options),
+  def inline_scalar({type, _}, value, path), do: wrong_type(type, value, path)
+
+  @doc false
+  def without_default({type, options}) when is_map(options),
     do: {type, Map.delete(options, :default)}
 
-  defp without_default(type), do: type
+  def without_default(type), do: type
 
   defp alignment(type, schema), do: Flatbuffer.Utils.alignment(type, schema)
 
@@ -357,14 +394,16 @@ defmodule Flatbuffer.Writer do
   defp push_raw(%State{} = state, data),
     do: %{state | chunks: [data | state.chunks], size: state.size + :erlang.iolist_size(data)}
 
-  defp push_offset(state, target) do
+  @doc false
+  def push_offset(state, target) do
     state = align(state, 4)
     offset = state.size - target + 4
     state = push_raw(state, <<offset::unsigned-little-32>>)
     {state.size, state}
   end
 
-  defp push_aligned(state, data, alignment) do
+  @doc false
+  def push_aligned(state, data, alignment) do
     state
     |> align(alignment)
     |> push_raw(data)
@@ -405,10 +444,12 @@ defmodule Flatbuffer.Writer do
     end
   end
 
-  defp normalize_name(nil), do: nil
-  defp normalize_name(name) when is_atom(name), do: Atom.to_string(name)
-  defp normalize_name(name), do: name
+  @doc false
+  def normalize_name(nil), do: nil
+  def normalize_name(name) when is_atom(name), do: Atom.to_string(name)
+  def normalize_name(name), do: name
 
-  defp wrong_type(type, data, path),
+  @doc false
+  def wrong_type(type, data, path),
     do: throw({:error, {:wrong_type, type, data, Enum.reverse(path)}})
 end

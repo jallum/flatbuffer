@@ -73,6 +73,42 @@ defmodule Flatbuffer.Schema.UseTest do
       end
     end
 
+    test "writes use schema-generated code instead of the interpreted writer" do
+      pid = self()
+
+      tracer =
+        spawn(fn ->
+          loop = fn loop ->
+            receive do
+              message ->
+                send(pid, {:flatbuffer_trace, message})
+                loop.(loop)
+            end
+          end
+
+          loop.(loop)
+        end)
+
+      session = :trace.session_create(:flatbuffer_generated_writer_test, tracer, [])
+      :trace.process(session, pid, true, [:call])
+      :trace.function(session, {Flatbuffer, :to_iolist, 2}, true, [])
+      :trace.function(session, {Flatbuffer, :to_binary, 2}, true, [])
+
+      try do
+        assert is_list(TestSchema.to_iolist(%{foo: 12}))
+        assert is_binary(TestSchema.to_binary(%{foo: 12}))
+
+        refute_receive {:flatbuffer_trace,
+                        {:trace, ^pid, :call, {Flatbuffer, :to_iolist, _arguments}}}
+
+        refute_receive {:flatbuffer_trace,
+                        {:trace, ^pid, :call, {Flatbuffer, :to_binary, _arguments}}}
+      after
+        :trace.session_destroy(session)
+        Process.exit(tracer, :kill)
+      end
+    end
+
     test "it will pick out a value correctly" do
       binary_value =
         "0E00000000000000060008000400060000000C000000"

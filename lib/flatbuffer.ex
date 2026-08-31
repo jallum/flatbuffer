@@ -28,6 +28,7 @@ defmodule Flatbuffer do
   alias Flatbuffer.Access
   alias Flatbuffer.Cursor
   alias Flatbuffer.Codegen.Reader, as: GeneratedReader
+  alias Flatbuffer.Codegen.Writer, as: GeneratedWriter
   alias Flatbuffer.Reading
   alias Flatbuffer.Schema
   alias Flatbuffer.Writer
@@ -166,18 +167,20 @@ defmodule Flatbuffer do
     with {:ok, schema} <-
            Schema.from_file(file, resolver: resolver, safe: Keyword.get(opts, :safe, false)) do
       reader = GeneratedReader.generate(schema)
+      writer = GeneratedWriter.generate(schema)
 
       quote do
         @external_resource unquote(Path.expand(source_file))
         def schema, do: unquote(Macro.escape(schema))
         unquote(reader)
+        unquote(writer)
         def read(buffer), do: __flatbuffer_generated_read__(buffer)
         def read!(buffer), do: __flatbuffer_generated_read_bang__(buffer)
         def get(buffer, path, default \\ nil), do: Flatbuffer.get(buffer, path, schema(), default)
         def fetch(buffer, path), do: Flatbuffer.fetch(buffer, path, schema())
         def fetch!(buffer, path), do: Flatbuffer.fetch!(buffer, path, schema())
-        def to_iolist(map), do: Flatbuffer.to_iolist(map, schema())
-        def to_binary(map), do: Flatbuffer.to_binary(map, schema())
+        def to_iolist(map), do: __flatbuffer_generated_to_iolist__(map)
+        def to_binary(map), do: __flatbuffer_generated_to_binary__(map)
       end
     else
       {:error, reason} -> raise "Failed to load schema from file (#{file}): #{inspect(reason)}"

@@ -5,6 +5,10 @@ defmodule Flatbuffer.FlatcInteropTest do
 
   alias Flatbuffer.Schema
 
+  defmodule GeneratedInterop do
+    use Flatbuffer, file: "test/fixtures/flatc/interop.fbs"
+  end
+
   @fixtures Path.expand("../fixtures/flatc", __DIR__)
   @schema_file Path.join(@fixtures, "interop.fbs")
   @json_file Path.join(@fixtures, "interop.json")
@@ -76,11 +80,17 @@ defmodule Flatbuffer.FlatcInteropTest do
     directory: directory
   } do
     {:ok, schema} = Schema.from_file(@schema_file)
-    buffer_file = Path.join(directory, "eflatbuffers.bin")
 
-    File.write!(buffer_file, Flatbuffer.to_binary(@expected, schema))
+    buffers = [
+      interpreted: Flatbuffer.to_binary(@expected, schema),
+      generated: GeneratedInterop.to_binary(@expected)
+    ]
 
-    run!(checker, [buffer_file])
+    for {writer, buffer} <- buffers do
+      buffer_file = Path.join(directory, "eflatbuffers-#{writer}.bin")
+      File.write!(buffer_file, buffer)
+      run!(checker, [buffer_file])
+    end
   end
 
   defp run!(executable, arguments) do
