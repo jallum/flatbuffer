@@ -1,0 +1,15 @@
+table Child {
+  id: uint;
+  score: double;
+  label: string;
+}
+
+table Root {
+  id: uint;
+  enabled: bool = true;
+  title: string;
+  values: [int];
+  children: [Child];
+}
+
+root_type Root;

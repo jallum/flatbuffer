@@ -1,0 +1,62 @@
+namespace generated;
+
+file_identifier "GENR";
+
+enum Mood : short {
+  UNKNOWN,
+  HAPPY,
+  CURIOUS
+}
+
+struct Padded {
+  tag: ubyte;
+  value: ulong;
+  code: ushort;
+}
+
+table Child {
+  id: int;
+  label: string;
+}
+
+table Other {
+  score: double;
+}
+
+union Payload {
+  Child,
+  Other
+}
+
+table Node {
+  value: int;
+  child: Node;
+}
+
+table Root {
+  enabled: bool = true;
+  count: uint;
+  signed_byte: byte;
+  unsigned_byte: ubyte;
+  signed_short: short;
+  unsigned_short: ushort;
+  signed_int: int;
+  signed_long: long;
+  unsigned_long: ulong;
+  ratio: float;
+  score: double;
+  mood: Mood = CURIOUS;
+  moods: [Mood];
+  title: string;
+  numbers: [int];
+  names: [string];
+  padded: Padded;
+  paddeds: [Padded];
+  child: Child;
+  children: [Child];
+  payload: Payload;
+  node: Node;
+  trailing: string;
+}
+
+root_type Root;

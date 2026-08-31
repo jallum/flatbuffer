@@ -48,6 +48,31 @@ defmodule Flatbuffer.Schema.UseTest do
       assert SafeTestSchema.schema().safe
     end
 
+    test "binary reads use schema-generated code instead of the interpreted reader" do
+      buffer = TestSchema.to_binary(%{foo: 12})
+      pid = self()
+
+      tracer =
+        spawn(fn ->
+          receive do
+            message -> send(pid, {:flatbuffer_trace, message})
+          end
+        end)
+
+      session = :trace.session_create(:flatbuffer_generated_reader_test, tracer, [])
+      :trace.process(session, pid, true, [:call])
+      :trace.function(session, {Flatbuffer, :read, 2}, true, [])
+
+      try do
+        assert {:ok, %{foo: 12}} == TestSchema.read(buffer)
+
+        refute_receive {:flatbuffer_trace, {:trace, ^pid, :call, {Flatbuffer, :read, _arguments}}}
+      after
+        :trace.session_destroy(session)
+        Process.exit(tracer, :kill)
+      end
+    end
+
     test "it will pick out a value correctly" do
       binary_value =
         "0E00000000000000060008000400060000000C000000"
@@ -58,6 +83,11 @@ defmodule Flatbuffer.Schema.UseTest do
 
     test "it resolves the schema file relative to the cwd when no :path is given" do
       assert TestSchema.schema() == NoPathTestSchema.schema()
+    end
+
+    test "it tracks the schema file as a compilation dependency" do
+      resources = TestSchema.__info__(:attributes)[:external_resource]
+      assert Path.expand("test/examples/test_schema.fbs") in resources
     end
 
     test "it raises at compile time when the schema file cannot be loaded" do

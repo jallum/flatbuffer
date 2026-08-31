@@ -146,6 +146,9 @@ iex(4)> ColorScheme.get(color_scheme_fb, [:background, :green])
 100
 ```
 
+`use Flatbuffer` compiles a schema-specialized reader for binary buffers. Calls with general
+iodata retain the interpreted reader fallback and the same public API.
+
 ## Interoperability tests
 
 The bidirectional integration tests require `flatc`, the FlatBuffers C++
