@@ -15,70 +15,70 @@ defmodule Flatbuffer.Cursor do
   def jump_u32(%__MODULE__{} = c), do: %__MODULE__{c | offset: c.offset + get_u32(c)}
 
   def get_i8(%__MODULE__{data: data, offset: offset}) when is_binary(data) do
-    <<_::binary-size(offset), value::signed-8, _::binary>> = data
+    <<_::binary-size(^offset), value::signed-8, _::binary>> = data
     value
   end
 
   def get_i8(c), do: IOData.to_binary!(c.data, c.offset, 1) |> decode_i8()
 
   def get_u8(%__MODULE__{data: data, offset: offset}) when is_binary(data) do
-    <<_::binary-size(offset), value::unsigned-8, _::binary>> = data
+    <<_::binary-size(^offset), value::unsigned-8, _::binary>> = data
     value
   end
 
   def get_u8(c), do: IOData.to_binary!(c.data, c.offset, 1) |> decode_u8()
 
   def get_i16(%__MODULE__{data: data, offset: offset}) when is_binary(data) do
-    <<_::binary-size(offset), value::signed-little-16, _::binary>> = data
+    <<_::binary-size(^offset), value::signed-little-16, _::binary>> = data
     value
   end
 
   def get_i16(c), do: IOData.to_binary!(c.data, c.offset, 2) |> decode_i16()
 
   def get_u16(%__MODULE__{data: data, offset: offset}) when is_binary(data) do
-    <<_::binary-size(offset), value::unsigned-little-16, _::binary>> = data
+    <<_::binary-size(^offset), value::unsigned-little-16, _::binary>> = data
     value
   end
 
   def get_u16(c), do: IOData.to_binary!(c.data, c.offset, 2) |> decode_u16()
 
   def get_i32(%__MODULE__{data: data, offset: offset}) when is_binary(data) do
-    <<_::binary-size(offset), value::signed-little-32, _::binary>> = data
+    <<_::binary-size(^offset), value::signed-little-32, _::binary>> = data
     value
   end
 
   def get_i32(c), do: IOData.to_binary!(c.data, c.offset, 4) |> decode_i32()
 
   def get_u32(%__MODULE__{data: data, offset: offset}) when is_binary(data) do
-    <<_::binary-size(offset), value::unsigned-little-32, _::binary>> = data
+    <<_::binary-size(^offset), value::unsigned-little-32, _::binary>> = data
     value
   end
 
   def get_u32(c), do: IOData.to_binary!(c.data, c.offset, 4) |> decode_u32()
 
   def get_i64(%__MODULE__{data: data, offset: offset}) when is_binary(data) do
-    <<_::binary-size(offset), value::signed-little-64, _::binary>> = data
+    <<_::binary-size(^offset), value::signed-little-64, _::binary>> = data
     value
   end
 
   def get_i64(c), do: IOData.to_binary!(c.data, c.offset, 8) |> decode_i64()
 
   def get_u64(%__MODULE__{data: data, offset: offset}) when is_binary(data) do
-    <<_::binary-size(offset), value::unsigned-little-64, _::binary>> = data
+    <<_::binary-size(^offset), value::unsigned-little-64, _::binary>> = data
     value
   end
 
   def get_u64(c), do: IOData.to_binary!(c.data, c.offset, 8) |> decode_u64()
 
   def get_f32(%__MODULE__{data: data, offset: offset}) when is_binary(data) do
-    <<_::binary-size(offset), value::float-little-32, _::binary>> = data
+    <<_::binary-size(^offset), value::float-little-32, _::binary>> = data
     value
   end
 
   def get_f32(c), do: IOData.to_binary!(c.data, c.offset, 4) |> decode_f32()
 
   def get_f64(%__MODULE__{data: data, offset: offset}) when is_binary(data) do
-    <<_::binary-size(offset), value::float-little-64, _::binary>> = data
+    <<_::binary-size(^offset), value::float-little-64, _::binary>> = data
     value
   end
 

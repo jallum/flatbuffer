@@ -14,7 +14,7 @@ defmodule CursorReadBench do
   end
 
   def binary_match_get_u32(data, offset) do
-    <<_::binary-size(offset), value::unsigned-little-32, _::binary>> = data
+    <<_::binary-size(^offset), value::unsigned-little-32, _::binary>> = data
     value
   end
 
