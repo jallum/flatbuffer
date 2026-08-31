@@ -27,6 +27,7 @@ defmodule Flatbuffer do
   alias Flatbuffer.BadFlatbufferError
   alias Flatbuffer.Access
   alias Flatbuffer.Cursor
+  alias Flatbuffer.Codegen.Reader, as: GeneratedReader
   alias Flatbuffer.Reading
   alias Flatbuffer.Schema
   alias Flatbuffer.Writer
@@ -151,20 +152,27 @@ defmodule Flatbuffer do
     * :safe - Decode schema-defined names as binaries instead of atoms. Defaults to `false`.
   """
   defmacro __using__(opts) do
+    path = Keyword.get(opts, :path)
+
     resolver =
-      case Keyword.get(opts, :path) do
+      case path do
         nil -> &File.read/1
         path -> &File.read(Path.join(path, &1))
       end
 
     file = Keyword.get(opts, :file) || raise "Missing :file option"
+    source_file = if path, do: Path.join(path, file), else: file
 
     with {:ok, schema} <-
            Schema.from_file(file, resolver: resolver, safe: Keyword.get(opts, :safe, false)) do
+      reader = GeneratedReader.generate(schema)
+
       quote do
+        @external_resource unquote(Path.expand(source_file))
         def schema, do: unquote(Macro.escape(schema))
-        def read(buffer), do: Flatbuffer.read(buffer, schema())
-        def read!(buffer), do: Flatbuffer.read!(buffer, schema())
+        unquote(reader)
+        def read(buffer), do: __flatbuffer_generated_read__(buffer)
+        def read!(buffer), do: __flatbuffer_generated_read_bang__(buffer)
         def get(buffer, path, default \\ nil), do: Flatbuffer.get(buffer, path, schema(), default)
         def fetch(buffer, path), do: Flatbuffer.fetch(buffer, path, schema())
         def fetch!(buffer, path), do: Flatbuffer.fetch!(buffer, path, schema())

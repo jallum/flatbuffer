@@ -1,22 +1,8 @@
-schema_text = """
-table Child {
-  id: uint;
-  score: double;
-  label: string;
-}
+defmodule Flatbuffer.Bench.GeneratedSchema do
+  use Flatbuffer, file: "bench/fixtures/runtime.fbs"
+end
 
-table Root {
-  id: uint;
-  enabled: bool = true;
-  title: string;
-  values: [int];
-  children: [Child];
-}
-
-root_type Root;
-"""
-
-{:ok, schema} = Flatbuffer.Schema.from_string(schema_text)
+schema = Flatbuffer.Bench.GeneratedSchema.schema()
 
 value = %{
   id: 42,
@@ -34,7 +20,10 @@ buffer = Flatbuffer.to_binary(value, schema)
 Benchee.run(
   %{
     "encode to binary" => fn -> Flatbuffer.to_binary(value, schema) end,
-    "decode full buffer" => fn -> Flatbuffer.read!(buffer, schema) end,
+    "decode full buffer (interpreted)" => fn -> Flatbuffer.read!(buffer, schema) end,
+    "decode full buffer (generated)" => fn ->
+      Flatbuffer.Bench.GeneratedSchema.read!(buffer)
+    end,
     "get nested field" => fn -> Flatbuffer.get(buffer, [:children, 10, :label], schema) end
   },
   time: 3,

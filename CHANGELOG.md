@@ -5,6 +5,8 @@
 - Structs now follow FlatBuffers alignment rules, including internal and trailing padding,
   nested structs, and aligned struct vectors. Buffers are verified bidirectionally against
   `flatc`.
+- Modules built with `use Flatbuffer` now compile a schema-specialized binary reader while
+  retaining the interpreted reader as an iodata fallback.
 
 ## 0.5.2 — 2026-08-28
 
