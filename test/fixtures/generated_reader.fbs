@@ -8,6 +8,21 @@ enum Mood : short {
   CURIOUS
 }
 
+enum Code : ushort {
+  FIRST,
+  SECOND
+}
+
+struct Pair {
+  left: int;
+  right: int;
+}
+
+struct NestedPair {
+  pair: Pair;
+  code: Code;
+}
+
 struct Padded {
   tag: ubyte;
   value: ulong;
@@ -57,6 +72,9 @@ table Root {
   payload: Payload;
   node: Node;
   trailing: string;
+  pair: Pair;
+  nested_pair: NestedPair;
+  payloads: [Payload];
 }
 
 root_type Root;

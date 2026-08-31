@@ -7,6 +7,9 @@
   `flatc`.
 - Modules built with `use Flatbuffer` now compile a schema-specialized binary reader while
   retaining the interpreted reader as an iodata fallback.
+- Modules built with `use Flatbuffer` now also compile a schema-specialized writer. Table
+  field emission order, vtable IDs, struct layouts, enum/union dispatch, vector element sizes,
+  and alignments are precomputed while preserving the existing iolist and binary APIs.
 
 ## 0.5.2 — 2026-08-28
 

@@ -1,0 +1,17 @@
+namespace generated_writer;
+
+file_identifier "GENW";
+
+table Child {
+  value: int;
+  name: string;
+}
+
+table Root {
+  first: string (shared);
+  second: string (shared);
+  ordinary: string;
+  children: [Child];
+}
+
+root_type Root;
