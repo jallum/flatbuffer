@@ -43,7 +43,7 @@ defmodule Eflatbuffers.MixProject do
 
   defp deps do
     [
-      {:iodata, "~> 0.7"},
+      {:iodata, "~> 0.9"},
       {:benchee, "~> 1.5", only: :dev},
       # castore is an optional dep of excoveralls; without it, compiling
       # excoveralls warns that CAStore.file_path/0 is undefined.
