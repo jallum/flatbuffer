@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Require `iodata ~> 0.9`, which fixes iolists silently returning truncated data for
+  out-of-range reads and makes nested-iolist traversal linear instead of quadratic.
 - Structs now follow FlatBuffers alignment rules, including internal and trailing padding,
   nested structs, and aligned struct vectors. Buffers are verified bidirectionally against
   `flatc`.
