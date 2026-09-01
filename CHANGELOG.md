@@ -1,17 +1,22 @@
 # Changelog
 
-## Unreleased
+## 0.6.0 — 2026-09-01
 
-- Require `iodata ~> 0.9`, which fixes iolists silently returning truncated data for
-  out-of-range reads and makes nested-iolist traversal linear instead of quadratic.
-- Structs now follow FlatBuffers alignment rules, including internal and trailing padding,
-  nested structs, and aligned struct vectors. Buffers are verified bidirectionally against
-  `flatc`.
-- Modules built with `use Flatbuffer` now compile a schema-specialized binary reader while
-  retaining the interpreted reader as an iodata fallback.
-- Modules built with `use Flatbuffer` now also compile a schema-specialized writer. Table
-  field emission order, vtable IDs, struct layouts, enum/union dispatch, vector element sizes,
-  and alignments are precomputed while preserving the existing iolist and binary APIs.
+- **Modules built with `use Flatbuffer` now compile schema-specialized readers and writers.** Field IDs, defaults, enum/union dispatch, struct layouts, vector element sizes, and table emission order are computed at compile time instead of interpreted from the schema on every call. Binary reads are ~2.6x faster with about half the allocation; writes are ~10% faster with ~17% less memory and ~23% fewer reductions. The API is unchanged — `read/1`, `to_binary/1`, and `to_iolist/1` work as before, and non-binary iodata buffers fall back to the interpreted reader:
+
+  ```elixir
+  defmodule MyThing do
+    use Flatbuffer, file: "my_thing.fbs"
+  end
+
+  {:ok, data} = MyThing.read(buffer)  # schema-specialized decode
+  binary = MyThing.to_binary(data)    # schema-specialized encode
+  ```
+
+- **Structs now follow FlatBuffers alignment rules** — internal and trailing padding, nested structs, aligned enum members, and struct vectors. Previously structs were packed without padding, so schemas with mixed-width struct members produced buffers that disagreed with `flatc`. Layouts are now verified bidirectionally against the C++ implementation. Recursive structs and reference types inside structs are rejected at schema load. Note: buffers written by earlier versions of this library containing mixed-width structs were not spec-conformant and will not decode correctly under this release — re-encode them. Schemas whose structs needed no padding are byte-identical.
+- Reads from binary buffers — the common case — pattern-match scalars and strings directly out of the binary instead of going through the generic iodata helper.
+- The writer batches inline vectors (numbers, enums, and structs) into a single aligned push instead of rebuilding writer state per element.
+- Require `iodata ~> 0.9`, which fixes iolists silently returning truncated data for out-of-range reads and makes nested-iolist traversal linear instead of quadratic.
 
 ## 0.5.2 — 2026-08-28
 
