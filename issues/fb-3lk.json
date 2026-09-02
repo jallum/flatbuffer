@@ -1,0 +1,14 @@
+{
+  "assignee": "",
+  "blocked_by": [],
+  "blocks": [],
+  "created": "2026-09-02T23:13:19Z",
+  "description": "A module that does 'use Flatbuffer, file: ...' inherits the schema-specialized reader/writer from Codegen.Reader/Codegen.Writer, and dialyzer analyzes that generated code as if the consumer wrote it. The generators emit clauses for every scalar type the format defines, but any given schema uses only a few, so dialyzer flags the rest. Observed in bedrock (Bedrock.SystemKeys.ClusterBootstrap, one small table schema): 17 warnings on 0.6.0 — unused_fun for the unreferenced decode helpers (__flatbuffer_generated_{u8,i16,i64,f32,f64}__/2), plus pattern-match and guard_fail warnings for the unreachable scalar clauses in __flatbuffer_generated_read_type__/3, __flatbuffer_generated_inline__/3, and the size/alignment dispatchers. Several also crash dialyxir's warning lexer ('Please file a bug in dialyxir' + 'Failed to lex warning'), making the output extra noisy.\n\nFix: have generate/1 emit '@dialyzer {:nowarn_function, [...]}' inside the quoted block, listing the generated functions. The generator knows every name/arity it emits (they all follow the __flatbuffer_generated_*__ convention), so the list is complete by construction, and the consumer's own hand-written code stays fully checked. Note that 'quote generated: true' is not enough — it silences elixirc, but dialyzer analyzes the BEAM and ignores the generated annotation.\n\nOptional follow-up (separate concern): prune generation to types reachable from the schema root — smaller generated modules and fewer dead clauses — but this doesn't remove the need for nowarn, since dialyzer can still prove the catch-all throw fallbacks unreachable once the emitted clause set is closed over the schema.\n\nDownstream: bedrock carries a module-wide '@dialyzer [:no_match, :no_unused]' in ClusterBootstrap as a stopgap (bedrock PR #226); it can be dropped once this lands.",
+  "id": "fb-3lk",
+  "labels": [],
+  "priority": 2,
+  "status": "open",
+  "title": "Codegen triggers dialyzer warnings in consumer modules; emit nowarn for generated functions",
+  "type": "task",
+  "updated_at": "2026-09-02T23:13:19Z"
+}
