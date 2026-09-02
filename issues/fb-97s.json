@@ -2,13 +2,14 @@
   "assignee": "",
   "blocked_by": [],
   "blocks": [],
+  "closed_at": "2026-09-02T23:18:26Z",
   "created": "2026-08-28T16:56:14Z",
   "description": "PR #1 fixed the package files list (fb-r3l), but 0.4.1 is already published with the stale generated .erl and Hex forbids republishing an existing version. Consumers get nothing until a 0.4.2 release: bump version in mix.exs, mix hex.publish, verify the fetched tarball contains no .erl.",
   "id": "fb-97s",
   "labels": [],
   "priority": 2,
-  "status": "open",
+  "status": "closed",
   "title": "Bump to 0.4.2 and republish to Hex",
   "type": "task",
-  "updated_at": "2026-08-28T16:56:14Z"
+  "updated_at": "2026-09-02T23:18:26Z"
 }
