@@ -1,0 +1,18 @@
+namespace dialyzer_consumer;
+
+table Unreachable {
+  unused: double;
+}
+
+table Child {
+  value: int;
+  name: string;
+}
+
+table Root {
+  name: string;
+  count: uint;
+  children: [Child];
+}
+
+root_type Root;

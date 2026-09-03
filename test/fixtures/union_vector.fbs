@@ -1,0 +1,13 @@
+table Child {
+  value: int;
+}
+
+union Value {
+  Child
+}
+
+table Root {
+  values: [Value];
+}
+
+root_type Root;

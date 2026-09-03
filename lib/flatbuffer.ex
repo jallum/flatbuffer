@@ -58,13 +58,9 @@ defmodule Flatbuffer do
   """
   @spec read!(buffer :: iodata(), Schema.t()) :: map()
   def read!(buffer, %Schema{} = schema) do
-    case read(buffer, schema) do
-      {:ok, value} ->
-        value
-
-      {:error, reason} ->
-        raise BadFlatbufferError, message: "Failed to read Flatbuffer: #{inspect(reason)}"
-    end
+    buffer
+    |> read(schema)
+    |> GeneratedReader.unwrap_read!()
   end
 
   @doc """
