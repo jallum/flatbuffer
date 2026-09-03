@@ -1,50 +1,65 @@
 defmodule Flatbuffer.Codegen.Writer do
   @moduledoc false
 
+  alias Flatbuffer.Codegen.Schema, as: CodegenSchema
   alias Flatbuffer.Schema
 
   def generate(%Schema{} = schema) do
+    reachable = CodegenSchema.reachable(schema)
+
     table_clauses =
-      Enum.flat_map(schema.entities, fn
-        {name, {:table, %{fields: fields}}} -> [table_clause(name, fields, schema)]
-        _entity -> []
+      Enum.flat_map(schema.entities, fn {name, entity} ->
+        if MapSet.member?(reachable.entity_names, name) do
+          case entity do
+            {:table, %{fields: fields}} -> [table_clause(name, fields, schema)]
+            _entity -> []
+          end
+        else
+          []
+        end
       end)
 
     inline_clauses =
-      Enum.flat_map(schema.entities, fn
-        {name, {:enum, %{members: members, type: type}}} ->
-          [enum_clause(name, members, type)]
+      Enum.flat_map(schema.entities, fn {name, entity} ->
+        if MapSet.member?(reachable.entity_names, name) do
+          case entity do
+            {:enum, %{members: members, type: type}} ->
+              [enum_clause(name, members, type)]
 
-        {name, {:struct, %{layout: layout, size: size}}} ->
-          [struct_clause(name, layout, size, schema)]
+            {:struct, %{layout: layout, size: size}} ->
+              [struct_clause(name, layout, size, schema)]
 
-        _entity ->
+            _entity ->
+              []
+          end
+        else
           []
+        end
       end)
 
-    entity_size_clauses =
-      Enum.flat_map(schema.entities, fn
-        {name, {:enum, %{type: type}}} ->
-          [entity_measure_clause(:size, :enum, name, scalar_size(type))]
+    string_clauses =
+      if reachable_type?(reachable, :string), do: [string_clauses()], else: []
 
-        {name, {:struct, %{size: size}}} ->
-          [entity_measure_clause(:size, :struct, name, size)]
-
-        _entity ->
-          []
+    vector_types =
+      reachable.types
+      |> Enum.flat_map(fn
+        {:vector, type} -> [type]
+        _type -> []
       end)
+      |> Enum.sort()
 
-    entity_alignment_clauses =
-      Enum.flat_map(schema.entities, fn
-        {name, {:enum, %{type: type}}} ->
-          [entity_measure_clause(:alignment, :enum, name, scalar_size(type))]
+    supported_vector_types = Enum.reject(vector_types, &match?({:union, _options}, &1))
+    vector_clauses = Enum.map(supported_vector_types, &vector_clauses(&1, schema))
 
-        {name, {:struct, %{alignment: alignment}}} ->
-          [entity_measure_clause(:alignment, :struct, name, alignment)]
+    reference_vector_helper =
+      if Enum.any?(supported_vector_types, &reference_type?/1),
+        do: [reference_vector_helper()],
+        else: []
 
-        _entity ->
-          []
-      end)
+    inline_vector_helper =
+      if Enum.any?(supported_vector_types, &(not reference_type?(&1))),
+        do: [inline_vector_helper()],
+        else: []
 
     root_type = Macro.escape(schema.root_type)
     buffer_id = schema.id || <<0, 0, 0, 0>>
@@ -68,6 +83,27 @@ defmodule Flatbuffer.Codegen.Writer do
         |> IO.iodata_to_binary()
       end
 
+      unquote_splicing(string_clauses)
+      unquote_splicing(vector_clauses)
+      unquote_splicing(table_clauses)
+      unquote_splicing(reference_vector_helper)
+      unquote_splicing(inline_vector_helper)
+      unquote_splicing(inline_clauses)
+
+      defp __flatbuffer_generated_inline__({_type, _options} = type, value, path),
+        do: Flatbuffer.Writer.inline_scalar(type, value, path)
+    end
+  end
+
+  defp reachable_type?(reachable, kind) do
+    Enum.any?(reachable.types, fn
+      {^kind, _options} -> true
+      _type -> false
+    end)
+  end
+
+  defp string_clauses do
+    quote do
       defp __flatbuffer_generated_encode__(
              {:string, options},
              string,
@@ -82,42 +118,71 @@ defmodule Flatbuffer.Codegen.Writer do
         )
       end
 
+      defp __flatbuffer_generated_encode__({:string, _options}, data, path, _state) do
+        Flatbuffer.Writer.wrong_type(:string, data, path)
+      end
+    end
+  end
+
+  defp vector_clauses(type, schema) do
+    escaped_type = Macro.escape(type)
+    element_type = Flatbuffer.Writer.without_default(type)
+    escaped_element_type = Macro.escape(element_type)
+    element_size = type_size(element_type, schema)
+    alignment = element_type |> type_alignment(schema) |> Macro.escape()
+
+    create_vector =
+      if reference_type?(element_type) do
+        :__flatbuffer_generated_create_reference_vector__
+      else
+        :__flatbuffer_generated_create_inline_vector__
+      end
+
+    call =
+      {create_vector, [],
+       [
+         Macro.var(:state, __MODULE__),
+         escaped_element_type,
+         Macro.var(:values, __MODULE__),
+         Macro.var(:path, __MODULE__),
+         element_size,
+         alignment
+       ]}
+
+    quote do
       defp __flatbuffer_generated_encode__(
-             {:vector, type},
+             {:vector, unquote(escaped_type)},
              values,
              path,
              state
            )
            when is_list(values) do
-        __flatbuffer_generated_create_vector__(state, type, values, path)
+        unquote(call)
       end
 
-      unquote_splicing(table_clauses)
-
-      defp __flatbuffer_generated_encode__({type, _options}, data, path, _state) do
-        Flatbuffer.Writer.wrong_type(type, data, path)
+      defp __flatbuffer_generated_encode__(
+             {:vector, unquote(escaped_type)},
+             data,
+             path,
+             _state
+           ) do
+        Flatbuffer.Writer.wrong_type(:vector, data, path)
       end
+    end
+  end
 
-      defp __flatbuffer_generated_create_vector__(state, type, values, path) do
-        type = Flatbuffer.Writer.without_default(type)
-
-        __flatbuffer_generated_create_vector_contents__(
-          state,
-          type,
-          values,
-          path,
-          length(values)
-        )
-      end
-
-      defp __flatbuffer_generated_create_vector_contents__(
+  defp reference_vector_helper do
+    quote do
+      defp __flatbuffer_generated_create_reference_vector__(
              state,
-             {type, _options} = element_type,
+             element_type,
              values,
              path,
-             vector_length
-           )
-           when type in [:string, :vector, :table] do
+             element_size,
+             alignment
+           ) do
+        vector_length = length(values)
+
         {elements, state, _next_index} =
           Enum.reduce(values, {[], state, 0}, fn value, {elements, state, index} ->
             {offset, state} =
@@ -135,18 +200,25 @@ defmodule Flatbuffer.Codegen.Writer do
           state,
           elements,
           vector_length,
-          __flatbuffer_generated_writer_size__(element_type),
-          __flatbuffer_generated_writer_alignment__(element_type)
+          element_size,
+          alignment
         )
       end
+    end
+  end
 
-      defp __flatbuffer_generated_create_vector_contents__(
+  defp inline_vector_helper do
+    quote do
+      defp __flatbuffer_generated_create_inline_vector__(
              state,
              type,
              values,
              path,
-             vector_length
+             element_size,
+             alignment
            ) do
+        vector_length = length(values)
+
         {elements, _next_index} =
           Enum.map_reduce(values, 0, fn value, index ->
             {
@@ -159,63 +231,15 @@ defmodule Flatbuffer.Codegen.Writer do
           state,
           elements,
           vector_length,
-          __flatbuffer_generated_writer_size__(type),
-          __flatbuffer_generated_writer_alignment__(type)
+          element_size,
+          alignment
         )
       end
-
-      unquote_splicing(inline_clauses)
-
-      defp __flatbuffer_generated_inline__({_type, _options} = type, value, path),
-        do: Flatbuffer.Writer.inline_scalar(type, value, path)
-
-      defp __flatbuffer_generated_writer_size__({type, _options})
-           when type in [:bool, :byte, :ubyte],
-           do: 1
-
-      defp __flatbuffer_generated_writer_size__({type, _options})
-           when type in [:short, :ushort],
-           do: 2
-
-      defp __flatbuffer_generated_writer_size__({type, _options})
-           when type in [:int, :uint, :float],
-           do: 4
-
-      defp __flatbuffer_generated_writer_size__({type, _options})
-           when type in [:long, :ulong, :double],
-           do: 8
-
-      defp __flatbuffer_generated_writer_size__({type, _options})
-           when type in [:string, :vector, :table, :union],
-           do: 4
-
-      unquote_splicing(entity_size_clauses)
-
-      defp __flatbuffer_generated_writer_size__({type, _options}),
-        do: throw({:error, {:unknown_scalar, type}})
-
-      defp __flatbuffer_generated_writer_alignment__({type, _options})
-           when type in [:bool, :byte, :ubyte],
-           do: 1
-
-      defp __flatbuffer_generated_writer_alignment__({type, _options})
-           when type in [:short, :ushort],
-           do: 2
-
-      defp __flatbuffer_generated_writer_alignment__({type, _options})
-           when type in [:int, :uint, :float, :string, :vector, :table],
-           do: 4
-
-      defp __flatbuffer_generated_writer_alignment__({type, _options})
-           when type in [:long, :ulong, :double],
-           do: 8
-
-      unquote_splicing(entity_alignment_clauses)
-
-      defp __flatbuffer_generated_writer_alignment__({type, _options}),
-        do: throw({:error, {:unknown_scalar, type}})
     end
   end
+
+  defp reference_type?({type, _options}) when type in [:string, :vector, :table], do: true
+  defp reference_type?(_type), do: false
 
   defp table_clause(name, fields, schema) do
     field_steps =
@@ -257,6 +281,15 @@ defmodule Flatbuffer.Codegen.Writer do
         unquote_splicing(location_steps)
 
         Flatbuffer.Writer.finish_table(state, table_start, locations)
+      end
+
+      defp __flatbuffer_generated_encode__(
+             {:table, %{name: unquote(name)}},
+             data,
+             path,
+             _state
+           ) do
+        Flatbuffer.Writer.wrong_type(:table, data, path)
       end
     end
   end
@@ -369,6 +402,34 @@ defmodule Flatbuffer.Codegen.Writer do
 
     {emission, location} = emit_offset_field(field)
     {preparation, emission, location, 4, id}
+  end
+
+  defp field_write(id, name, {:vector, {:union, _options}}, _schema) do
+    preparation =
+      quote do
+        case unquote(field_get(name)) do
+          nil ->
+            :ok
+
+          values when is_list(values) ->
+            case values do
+              [] ->
+                throw({:error, {:unknown_scalar, :union}})
+
+              [value | _rest] ->
+                Flatbuffer.Writer.wrong_type(
+                  :union,
+                  value,
+                  [[0], unquote(name) | path]
+                )
+            end
+
+          data ->
+            Flatbuffer.Writer.wrong_type(:vector, data, [unquote(name) | path])
+        end
+      end
+
+    {preparation, quote(do: nil), nil, 4, id}
   end
 
   defp field_write(id, name, {type, _options} = field_type, _schema)
@@ -528,6 +589,8 @@ defmodule Flatbuffer.Codegen.Writer do
     {emission, location}
   end
 
+  defp collect_location(_id, nil), do: quote(do: nil)
+
   defp collect_location(id, location) do
     quote do
       locations =
@@ -608,20 +671,6 @@ defmodule Flatbuffer.Codegen.Writer do
     end
   end
 
-  defp entity_measure_clause(:size, kind, name, value) do
-    quote do
-      defp __flatbuffer_generated_writer_size__({unquote(kind), %{name: unquote(name)}}),
-        do: unquote(value)
-    end
-  end
-
-  defp entity_measure_clause(:alignment, kind, name, value) do
-    quote do
-      defp __flatbuffer_generated_writer_alignment__({unquote(kind), %{name: unquote(name)}}),
-        do: unquote(value)
-    end
-  end
-
   defp type_size({:enum, %{name: name}}, schema) do
     {:enum, %{type: type}} = Map.fetch!(schema.entities, name)
     type_size(type, schema)
@@ -631,6 +680,10 @@ defmodule Flatbuffer.Codegen.Writer do
     {:struct, %{size: size}} = Map.fetch!(schema.entities, name)
     size
   end
+
+  defp type_size({type, _options}, _schema)
+       when type in [:string, :vector, :table, :union],
+       do: 4
 
   defp type_size({type, _options}, _schema) when type in [:bool, :byte, :ubyte], do: 1
   defp type_size({type, _options}, _schema) when type in [:short, :ushort], do: 2
@@ -655,8 +708,6 @@ defmodule Flatbuffer.Codegen.Writer do
        do: 4
 
   defp type_alignment({type, _options}, _schema) when type in [:long, :ulong, :double], do: 8
-
-  defp scalar_size({type, _options}), do: Flatbuffer.Utils.scalar_size(type)
 
   defp zero_padding(0), do: <<>>
   defp zero_padding(size), do: :binary.copy(<<0>>, size)

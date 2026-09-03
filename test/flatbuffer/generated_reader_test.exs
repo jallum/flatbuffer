@@ -14,6 +14,10 @@ defmodule Flatbuffer.GeneratedReaderTest do
       safe: true
   end
 
+  defmodule UnionVectorGenerated do
+    use Flatbuffer, file: "test/fixtures/union_vector.fbs"
+  end
+
   @value %{
     enabled: true,
     count: 4_000_000_000,
@@ -106,6 +110,34 @@ defmodule Flatbuffer.GeneratedReaderTest do
     assert Flatbuffer.read(buffer, schema) == Generated.read(buffer)
   end
 
+  test "generates readers only for types reachable from the root" do
+    {:ok, schema} =
+      Flatbuffer.Schema.from_string("""
+      table Unreachable { unused: double; }
+      table Root { count: uint; }
+      root_type Root;
+      """)
+
+    functions =
+      schema
+      |> Flatbuffer.Codegen.Reader.generate()
+      |> generated_private_functions()
+
+    assert {:__flatbuffer_generated_u32__, 2} in functions
+    refute {:__flatbuffer_generated_f64__, 2} in functions
+    refute {:__flatbuffer_generated_size__, 1} in functions
+    refute {:__flatbuffer_generated_read_vector__, 5} in functions
+  end
+
+  test "does not generate union members reachable only through an unsupported vector" do
+    schema = UnionVectorGenerated.schema()
+
+    generated = schema |> Flatbuffer.Codegen.Reader.generate() |> Macro.to_string()
+
+    refute generated =~ "{:int, _options}"
+    refute generated =~ ~s({:table, %{name: "Child"}})
+  end
+
   test "throws the same error for an unknown enum value" do
     buffer = Generated.to_binary(@value)
     root = u32(buffer, 0)
@@ -115,6 +147,20 @@ defmodule Flatbuffer.GeneratedReaderTest do
     corrupt = prefix <> <<99::signed-little-16>> <> suffix
 
     assert {:error, {:not_in_enum, 99, _members}} = catch_throw(Generated.read(corrupt))
+  end
+
+  test "preserves the interpreted reader error for unsupported union vectors" do
+    {:ok, integer_vector_schema} =
+      Flatbuffer.Schema.from_string("table Root { values: [int]; } root_type Root;")
+
+    empty_buffer = Flatbuffer.to_binary(%{values: []}, integer_vector_schema)
+    buffer = Flatbuffer.to_binary(%{values: [1]}, integer_vector_schema)
+
+    assert UnionVectorGenerated.read(empty_buffer) ==
+             Flatbuffer.read(empty_buffer, UnionVectorGenerated.schema())
+
+    assert catch_throw(UnionVectorGenerated.read(buffer)) ==
+             catch_throw(Flatbuffer.read(buffer, UnionVectorGenerated.schema()))
   end
 
   defp u16(binary, offset) do
@@ -131,4 +177,23 @@ defmodule Flatbuffer.GeneratedReaderTest do
     <<_::binary-size(^offset), value::signed-little-32, _::binary>> = binary
     value
   end
+
+  defp generated_private_functions(ast) do
+    {_ast, functions} =
+      Macro.prewalk(ast, MapSet.new(), fn
+        {:defp, _metadata, [head | _body]} = node, functions ->
+          {name, arguments} = definition_name_and_arguments(head)
+          {node, MapSet.put(functions, {name, length(arguments || [])})}
+
+        node, functions ->
+          {node, functions}
+      end)
+
+    functions
+  end
+
+  defp definition_name_and_arguments({:when, _metadata, [head | _guards]}),
+    do: definition_name_and_arguments(head)
+
+  defp definition_name_and_arguments({name, _metadata, arguments}), do: {name, arguments}
 end

@@ -124,6 +124,21 @@ defmodule Flatbuffer.GeneratedWriterTest do
     assert_raise ArgumentError, fn -> String.to_existing_atom(field_name) end
   end
 
+  test "precomputes vector size and alignment instead of generating dispatchers" do
+    {:ok, schema} =
+      Flatbuffer.Schema.from_string("""
+      table Child { value: int; }
+      table Root { children: [Child]; }
+      root_type Root;
+      """)
+
+    generated = schema |> Flatbuffer.Codegen.Writer.generate() |> Macro.to_string()
+
+    assert generated =~ "__flatbuffer_generated_create_reference_vector__"
+    refute generated =~ "__flatbuffer_generated_writer_size__"
+    refute generated =~ "__flatbuffer_generated_writer_alignment__"
+  end
+
   defp root_table(<<offset::unsigned-little-32, _rest::binary>>), do: offset
 
   defp vtable_target(buffer, table) do

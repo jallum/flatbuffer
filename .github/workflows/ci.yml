@@ -52,6 +52,9 @@ jobs:
           path: |
             deps
             _build
+            integration/dialyzer_consumer/deps
+            integration/dialyzer_consumer/_build
+            integration/dialyzer_consumer/priv/plts
           key: ${{ runner.os }}-${{ matrix.elixir }}-${{ matrix.otp }}-${{ hashFiles('**/mix.lock') }}
           restore-keys: |
             ${{ runner.os }}-${{ matrix.elixir }}-${{ matrix.otp }}-
@@ -66,6 +69,12 @@ jobs:
         run: mix compile --warnings-as-errors
       - name: Run tests
         run: ${{ matrix.coverage && 'mix coveralls.github --warnings-as-errors' || 'mix test --warnings-as-errors' }}
+      - name: Check generated consumer with Dialyzer
+        if: ${{ matrix.lint }}
+        working-directory: integration/dialyzer_consumer
+        env:
+          MIX_ENV: dev
+        run: mix deps.get && mix compile --warnings-as-errors && mix dialyzer --force-check --format short
       - name: Install flatc integration dependencies
         if: ${{ matrix.lint }}
         run: sudo apt-get update && sudo apt-get install --yes flatbuffers-compiler libflatbuffers-dev g++

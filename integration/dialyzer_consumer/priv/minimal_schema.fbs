@@ -1,0 +1,5 @@
+namespace dialyzer_consumer;
+
+table Root {}
+
+root_type Root;
