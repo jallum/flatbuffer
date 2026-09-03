@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.6.1 — 2026-09-03
+
+- **`use Flatbuffer` modules no longer trigger Dialyzer warnings in consuming projects.** The generators previously emitted reader/writer clauses for every scalar type the FlatBuffers format defines; any given schema uses only a few, so Dialyzer flagged the rest as unused or unreachable in _your_ module — around 20 warnings for even a one-table schema, several of which also crashed dialyxir's warning formatter. Generated code is now specialized to the types actually reachable from the schema root, with vector sizes and alignments precomputed instead of dispatched at runtime — no dead clauses and no `@dialyzer` suppressions, so your own code stays fully checked. If you added a workaround such as `@dialyzer [:no_match, :no_unused]` to a consumer module, you can drop it. A downstream Dialyzer consumer project now runs in CI to keep this clean.
+
 ## 0.6.0 — 2026-09-01
 
 - **Modules built with `use Flatbuffer` now compile schema-specialized readers and writers.** Field IDs, defaults, enum/union dispatch, struct layouts, vector element sizes, and table emission order are computed at compile time instead of interpreted from the schema on every call. Binary reads are ~2.6x faster with about half the allocation; writes are ~10% faster with ~17% less memory and ~23% fewer reductions. The API is unchanged — `read/1`, `to_binary/1`, and `to_iolist/1` work as before, and non-binary iodata buffers fall back to the interpreted reader:
